@@ -10,7 +10,7 @@ Do not expect frequent updates, I'll be using this until it breaks pretty much.
 
 
 # Setting up
-1 . ``pip install -r requirements.txt``
+1. ``pip install -r requirements.txt``
 2. ``python server.py``  **(should now be running on localhost:1337)**
 3. Perform a test call by running ``python testcalls.py`` **in a separate terminal**
 
