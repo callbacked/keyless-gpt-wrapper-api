@@ -1,17 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 from duckduckgo_search import DDGS
 from fastapi.responses import JSONResponse, StreamingResponse
 import logging
 import uuid
 import time
 import json
+import re
 
 app = FastAPI()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,7 +35,7 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
-    conversation_id: str = None  # optional in the event you want to do follow up messages
+    conversation_id: Optional[str] = None
 
 class ChatCompletionResponse(BaseModel):
     id: str
@@ -46,6 +47,51 @@ class ChatCompletionResponse(BaseModel):
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
+
+def compress_text(text):
+    original_length = len(text)
+    # Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    compressed_length = len(text)
+    compression_ratio = (original_length - compressed_length) / original_length * 100
+    logging.info(f"Compressed text from {original_length} to {compressed_length} characters. Compression ratio: {compression_ratio:.2f}%")
+    return text
+
+def manage_conversation_context(conversations, conversation_id, new_messages, max_chars=16000):
+    current_conversation = conversations.get(conversation_id, [])
+    
+    initial_char_count = sum(len(m.content) for m in current_conversation)
+    initial_message_count = len(current_conversation)
+    logging.info(f"Initial state for conversation {conversation_id}: {initial_char_count} characters, {initial_message_count} messages")
+    
+    for message in current_conversation + new_messages:
+        message.content = compress_text(message.content)
+    
+    current_conversation.extend(new_messages)
+    
+    # length of convo
+    total_chars = sum(len(m.content) for m in current_conversation)
+    
+    removed_messages = 0
+    while total_chars > max_chars:
+        for i, msg in enumerate(current_conversation):
+            if msg.role == 'assistant':
+                del current_conversation[i]
+                removed_messages += 1
+                break
+        else:
+            del current_conversation[0]
+            removed_messages += 1
+        
+        total_chars = sum(len(m.content) for m in current_conversation)
+    
+    final_char_count = total_chars
+    final_message_count = len(current_conversation)
+    logging.info(f"Final state for conversation {conversation_id}: {final_char_count} characters, {final_message_count} messages")
+    logging.info(f"Removed {removed_messages} messages to stay within the limit")
+    
+    conversations[conversation_id] = current_conversation
+    return current_conversation
 
 @app.get("/v1/models")
 async def list_models():
@@ -59,18 +105,16 @@ async def list_models():
 async def chat_completion(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
-    if conversation_id not in conversations:
-        conversations[conversation_id] = request.messages
-    else:
-        conversations[conversation_id].extend(request.messages[1:])  # Exclude system message if present
+    logging.info(f"Received request for conversation {conversation_id}")
     
-    query = " ".join([msg.content for msg in conversations[conversation_id] if msg.role != "system"])
-    # logging.info(f"Conversation ID: {conversation_id}, Query: {query}") # UNCOMMENT TO SEE QUERY SENT
-
+    managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
+    
+    query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
+    logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
+    
     async def generate():
         try:
             results = DDGS().chat(query, model=request.model)
-            # logging.info(f"Result: {results}") UNCOMMENT TO GET RESPONSES
             response = {
                 "id": conversation_id,
                 "object": "chat.completion.chunk",
@@ -89,8 +133,10 @@ async def chat_completion(request: ChatCompletionRequest):
             }
             yield f"data: {json.dumps(response)}\n\n"
 
-            # response to the conversation history
-            conversations[conversation_id].append(ChatMessage(role="assistant", content=results))
+            # Add response to the conversation history
+            manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
+
+            logging.info(f"Generated response for conversation {conversation_id}: {len(results)} characters")
 
             yield "data: [DONE]\n\n"
         except Exception as e:
@@ -103,17 +149,16 @@ async def chat_completion(request: ChatCompletionRequest):
 async def chat_completion_non_streaming(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
-    if conversation_id not in conversations:
-        conversations[conversation_id] = request.messages
-    else:
-        conversations[conversation_id].extend(request.messages[1:])  # Exclude system message if present
+    logging.info(f"Received non-streaming request for conversation {conversation_id}")
     
-    query = " ".join([msg.content for msg in conversations[conversation_id] if msg.role != "system"])
-    # logging.info(f"Conversation ID: {conversation_id}, Query: {query}") # UNCOMMENT TO SEE QUERY SENT
-
+    managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
+    
+    query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
+    logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
+    
     try:
         results = DDGS().chat(query, model=request.model)
-        logging.info(f"Results from DDGS: {results}")
+        logging.info(f"Generated response for conversation {conversation_id}: {len(results)} characters")
         response = {
             "id": conversation_id,
             "object": "chat.completion",
@@ -136,10 +181,9 @@ async def chat_completion_non_streaming(request: ChatCompletionRequest):
             }
         }
 
-        # Add response to the conversation history
-        conversations[conversation_id].append(ChatMessage(role="assistant", content=results))
+        manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
 
-        logging.info(f"Sending response: {response}")
+        logging.info(f"Sending response for conversation {conversation_id}")
         return JSONResponse(content=response, media_type="application/json")
     except Exception as e:
         logging.error(f"Exception occurred: {str(e)}")
@@ -149,8 +193,10 @@ async def chat_completion_non_streaming(request: ChatCompletionRequest):
 async def end_conversation(conversation_id: str):
     if conversation_id in conversations:
         del conversations[conversation_id]
+        logging.info(f"Conversation {conversation_id} ended and context cleared")
         return {"message": f"Conversation {conversation_id} ended and context cleared."}
     else:
+        logging.warning(f"Attempt to end non-existent conversation {conversation_id}")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
 if __name__ == "__main__":
