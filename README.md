@@ -2,19 +2,41 @@
 
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls. 
 
-This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search). From there I made an OpenAI Compatible API to make sure I can use it in other services. More notably in those VSCode coding extensions.
+This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search), which allows you to use AI models, like GPT4o Mini and Claude 3 Haiku. From there I made an OpenAI Compatible API to make sure I can use it in other services. More notably in those VSCode coding extensions.
 
-**Note:** I know it works with the Continue.dev VSCode extension, have not tested it on anything else, so YMMV
-
-Do not expect frequent updates, I'll be using this until it breaks pretty much.
+**Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
 
-# Setting up
+In my time making this API I found some limitations from using the DuckDuckGo Python Library: 
+1. Cannot send images
+2. context length for a given conversation session is up to 16k characters
+
+*Do not expect frequent updates, I'll be using this until it breaks pretty much.*
+
+*[DuckDuckGo AI Terms of Service](https://duckduckgo.com/aichat/privacy-terms)*
+
+
+
+# Setting Up Locally
 1 . ``pip install -r requirements.txt``
 2. ``python server.py``  **(should now be running on localhost:1337)**
 3. Perform a test call by running ``python testcalls.py`` **in a separate terminal**
 
-(docker pending)
+# Setting Up Via Docker
+You can set up with Docker through one of two ways, its up to personal preference:
+#### Doing it with docker run:
+1. ``git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api ``
+2. ``docker build -t keyless-gpt-wrapper-api:latest .``
+3. ``docker run --name keyless -d -p 1337:1337 keyless-gpt-wrapper-api:latest``
+
+
+#### Doing it with docker-compose:
+1. ``git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api ``
+4. ``docker-compose up -d`` 
+
+
+	
+
 ## Sending requests
 #### Calling upon available models
 ``curl -X GET http://127.0.0.1:1337/v1/models
