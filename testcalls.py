@@ -1,50 +1,69 @@
 import requests
+import json
 
-# EXAMPLE CURL SCRIPTS
-# [STREAMING]
-# -----------------------
-# curl -X POST "http://localhost:1337/v1/chat/completions" \
-#      -H "Content-Type: application/json" \
-#      -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
-#      -H "Accept: text/event-stream"
+# This tests functionality for:
 
-# [NON STREAMING]
-#-----------------------
-# curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
-#      -H "Content-Type: application/json" \
-#      -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}'
-
-# [GET MODELS]
-#-----------------------
-# curl -X GET "http://localhost:1337/v1/models"
+# 1. Listing models
+# 2. Chat completion
+# 3. Chat completion non-streaming
+# 4. Getting a conversation ID and ending the conversation by deleting it
 
 
-# api server
-base_url = "http://localhost:1337/v1" # i used 1337
+base_url = "http://localhost:1337/v1" 
+conversation_id = None
 
-# get response of list of models
-response = requests.get(f"{base_url}/models")
-print("GET /v1/models")
-print("Status Code:", response.status_code)
-print("Response:", response.json())
+def test_list_models():
+    response = requests.get(f"{base_url}/models")
+    assert response.status_code == 200
+    data = response.json()
+    assert "data" in data
+    assert len(data["data"]) > 0
+    print("List Models:", data)
 
-# Test /v1/chat/completions (non-streaming, so message is sent all at once and not chunks)
-data = {
-    "model": "gpt-4o-mini", # or claude-3-haiku
-    "messages": [
-        {"role": "user", "content": "Tell me a joke"}
-    ]
-}
-response = requests.post(f"{base_url}/chat/completions/non-streaming", json=data)
-print("\nPOST /v1/chat/completions/non-streaming")
-print("Status Code:", response.status_code)
-print("Response:", response.json())
+def test_chat_completion():
+    global conversation_id
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "user", "content": "Hello, how are you?"}
+        ]
+    }
+    response = requests.post(f"{base_url}/chat/completions", data=json.dumps(payload), headers=headers, stream=True)
+    assert response.status_code == 200
+    print("Chat Completion:")
+    for line in response.iter_lines():
+        if line:
+            decoded_line = line.decode("utf-8")
+            print(decoded_line)
+            if "id" in decoded_line:
+                conversation_id = json.loads(decoded_line.split("data: ")[1])["id"]
+    print("Conversation ID captured:", conversation_id)
 
-# Test /v1/chat/completions (streaming, so message is sent in chunks)
-response = requests.post(f"{base_url}/chat/completions", json=data, stream=True)
-print("\nPOST /v1/chat/completions")
-print("Status Code:", response.status_code)
-print("Response:")
-for line in response.iter_lines():
-    if line:
-        print(line.decode('utf-8'))
+def test_chat_completion_non_streaming():
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "user", "content": "Tell me a joke."}
+        ]
+    }
+    response = requests.post(f"{base_url}/chat/completions/non-streaming", data=json.dumps(payload), headers=headers)
+    assert response.status_code == 200
+    print("Chat Completion (Non-Streaming):", response.json())
+
+def test_end_conversation(conversation_id):
+    response = requests.delete(f"{base_url}/conversations/{conversation_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert "message" in data
+    print("End Conversation:", data)
+
+if __name__ == "__main__":
+    test_list_models()
+    test_chat_completion()
+    test_chat_completion_non_streaming()
+    if conversation_id:
+        test_end_conversation(conversation_id)
+    else:
+        print("No valid conversation ID found to end the conversation.")
