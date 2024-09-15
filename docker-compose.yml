@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  keyless-gpt-wrapper-api:
+    build:
+      context: .
+    container_name: keyless
+    ports:
+      - "1337:1337"
+    restart: unless-stopped
