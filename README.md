@@ -19,9 +19,9 @@ This is done by using the DuckDuckGo Python library, and using its [chat() funct
 In my time making this API I found some limitations from using the DuckDuckGo Python Library:
 
 1. Cannot send images
-	1a. Havent figured this one out yet 
+		1a. Havent figured this one out yet 
 
-2. Context length for a given conversation session is up to 16k characters
+3. Context length for a given conversation session is up to 16k characters
 
 	2a. As a way to work within the bounds of this, the messages are compressed by removing whitespace in order to retain more characters. Giving it a much lengthier context. Once you approach the context limit, old messages start getting pruned from its context.
 
@@ -215,6 +215,4 @@ curl -X POST http://127.0.0.1:1337/v1/chat/completions \
 
 #### Deleting a conversation
 
-``curl -X DELETE http://127.0.0.1:1337/v1/conversations/ca218944-3bc0-41c6-8b9e-37ad52407bb9
-
-``
+``curl -X DELETE http://127.0.0.1:1337/v1/conversations/ca218944-3bc0-41c6-8b9e-37ad52407bb9``
