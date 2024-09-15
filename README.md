@@ -26,7 +26,7 @@ In my time making this API I found some limitations from using the DuckDuckGo Py
 You can set up with Docker through one of two ways, its up to personal preference:
 #### Doing it with docker run:
 1. ``git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api ``
-2. `` docker build -t keyless-gpt-wrapper-api:latest .``
+2. ``docker build -t keyless-gpt-wrapper-api:latest .``
 3. ``docker run --name keyless -d -p 1337:1337 keyless-gpt-wrapper-api:latest``
 
 
