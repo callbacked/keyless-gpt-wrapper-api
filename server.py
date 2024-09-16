@@ -96,7 +96,8 @@ def manage_conversation_context(conversations, conversation_id, new_messages, ma
 async def list_models():
     models = [
         ModelInfo(id="gpt-4o-mini"),
-        ModelInfo(id="claude-3-haiku")
+        ModelInfo(id="claude-3-haiku"),
+        ModelInfo(id="mixtral-8x7b")
     ]
     return {"data": models, "object": "list"}
 
