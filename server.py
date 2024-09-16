@@ -9,6 +9,7 @@ import uuid
 import time
 import json
 import re
+import asyncio
 
 app = FastAPI()
 
@@ -50,7 +51,6 @@ conversations: Dict[str, List[ChatMessage]] = {}
 
 def compress_text(text):
     original_length = len(text)
-    # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     compressed_length = len(text)
     compression_ratio = (original_length - compressed_length) / original_length * 100
@@ -69,7 +69,6 @@ def manage_conversation_context(conversations, conversation_id, new_messages, ma
     
     current_conversation.extend(new_messages)
     
-    # length of convo
     total_chars = sum(len(m.content) for m in current_conversation)
     
     removed_messages = 0
@@ -115,28 +114,30 @@ async def chat_completion(request: ChatCompletionRequest):
     async def generate():
         try:
             results = DDGS().chat(query, model=request.model)
-            response = {
-                "id": conversation_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model,
-                "choices": [
-                    {
-                        "index": 0,
-                        "delta": {
-                            "role": "assistant",
-                            "content": results
-                        },
-                        "finish_reason": None
-                    }
-                ]
-            }
-            yield f"data: {json.dumps(response)}\n\n"
 
-            # Add response to the conversation history
+            chunk_size = 10  # 10 chars per sec is a good rate for streaming
+            for i in range(0, len(results), chunk_size):
+                chunk = results[i:i+chunk_size]
+                response = {
+                    "id": conversation_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "role": "assistant",
+                                "content": chunk
+                            },
+                            "finish_reason": None
+                        }
+                    ]
+                }
+                yield f"data: {json.dumps(response)}\n\n"
+                await asyncio.sleep(0.1)  #force streaming
+
             manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
-
-            logging.info(f"Generated response for conversation {conversation_id}: {len(results)} characters")
 
             yield "data: [DONE]\n\n"
         except Exception as e:
