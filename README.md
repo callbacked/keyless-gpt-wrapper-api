@@ -25,7 +25,17 @@ In my time making this API I found some limitations from using the DuckDuckGo Py
 *[DuckDuckGo AI Terms of Service](https://duckduckgo.com/aichat/privacy-terms)*
 
 
-# Example Usage in Other Services
+# Example Demo Usage
+
+
+
+https://github.com/user-attachments/assets/1d5ece0e-201e-4079-915c-f5c3351654fa
+
+
+
+https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8
+
+
 
 # Setting Up Locally
 
