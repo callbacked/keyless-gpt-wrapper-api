@@ -16,9 +16,11 @@ In my time making this API I found some limitations from using the DuckDuckGo Py
   
 
 1. Cannot send images
+
   1a. Havent figured this one out yet
 
-3. Context length for a given conversation session is up to 16k characters
+3. Context length for a given conversation session is up to 16k characters.
+
   2a. As a way to work within the bounds of this, the messages are compressed by removing whitespace in order to retain more characters. Giving it a much lengthier context. Once you approach the context limit, old messages start getting pruned from its context.
 
 *Do not expect frequent updates, I'll be using this until it breaks pretty much.*
