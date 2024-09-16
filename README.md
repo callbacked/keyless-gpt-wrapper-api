@@ -150,7 +150,6 @@ With the response received, you can send a follow-up question with the conversat
 
 
 ```
-
 curl -X POST http://127.0.0.1:1337/v1/chat/completions \
 -H "Content-Type: application/json" \
 -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "ca218944-3bc0-41c6-8b9e-37ad52407bb9"}'
