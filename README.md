@@ -4,16 +4,13 @@
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls.
 
   
-This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search), which allows you to use AI models, like GPT4o Mini and Claude 3 Haiku. From there I made an OpenAI Compatible API to make sure I can use it in other services. More notably in those VSCode coding extensions.
+This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search), which allows you to use AI models, like GPT4o Mini and Claude 3 Haiku. From there I made an OpenAI Compatible API to make sure I can use it in other services.
 
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
 In my time making this API I found some limitations from using the DuckDuckGo Python Library:
 
-  
-
-  
 
 1. Cannot send images
 
@@ -28,8 +25,9 @@ In my time making this API I found some limitations from using the DuckDuckGo Py
 *[DuckDuckGo AI Terms of Service](https://duckduckgo.com/aichat/privacy-terms)*
 
 
-# Setting Up Locally
+# Example Usage in Other Services
 
+# Setting Up Locally
 
 
 1.  ``pip install -r requirements.txt``
