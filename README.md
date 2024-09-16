@@ -82,7 +82,8 @@ You can set up with Docker through one of two ways, its up to personal preferenc
 #### Receiving streamed message (message sent in chunks)
 
 Where ``"content":`` is where you put your message
-``` curl -X POST "http://localhost:1337/v1/chat/completions" \
+```
+curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
 -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
 -H "Accept: text/event-stream"
