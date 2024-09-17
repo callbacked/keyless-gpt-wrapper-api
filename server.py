@@ -53,18 +53,18 @@ def compress_text(text):
     original_length = len(text)
     text = re.sub(r'\s+', ' ', text).strip()
     compressed_length = len(text)
-    compression_ratio = (original_length - compressed_length) / original_length * 100
+    compression_ratio = (original_length - compressed_length) / original_length * 100 if original_length else 0
     logging.info(f"Compressed text from {original_length} to {compressed_length} characters. Compression ratio: {compression_ratio:.2f}%")
     return text
 
-def manage_conversation_context(conversations, conversation_id, new_messages, max_chars=16000):
+def manage_conversation_context(conversations, conversation_id, new_messages, max_chars=20000): # turns out its 20k!
     current_conversation = conversations.get(conversation_id, [])
     
     initial_char_count = sum(len(m.content) for m in current_conversation)
     initial_message_count = len(current_conversation)
     logging.info(f"Initial state for conversation {conversation_id}: {initial_char_count} characters, {initial_message_count} messages")
     
-    for message in current_conversation + new_messages:
+    for message in new_messages:
         message.content = compress_text(message.content)
     
     current_conversation.extend(new_messages)
@@ -73,15 +73,12 @@ def manage_conversation_context(conversations, conversation_id, new_messages, ma
     
     removed_messages = 0
     while total_chars > max_chars:
-        for i, msg in enumerate(current_conversation):
-            if msg.role == 'assistant':
-                del current_conversation[i]
-                removed_messages += 1
-                break
-        else:
-            del current_conversation[0]
+        if current_conversation:
+            removed_msg = current_conversation.pop(0)
             removed_messages += 1
-        
+            logging.info(f"Removed message: {removed_msg.role} - {removed_msg.content[:50]}...")
+        else:
+            break  
         total_chars = sum(len(m.content) for m in current_conversation)
     
     final_char_count = total_chars
@@ -94,6 +91,7 @@ def manage_conversation_context(conversations, conversation_id, new_messages, ma
 
 @app.get("/v1/models")
 async def list_models():
+    logging.info("Listing available models")
     models = [
         ModelInfo(id="gpt-4o-mini"),
         ModelInfo(id="claude-3-haiku"),
@@ -105,17 +103,27 @@ async def list_models():
 async def chat_completion(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
-    logging.info(f"Received request for conversation {conversation_id}")
+    logging.info(f"Received streaming request for conversation {conversation_id}")
+    logging.debug(f"Request content: {request.model_dump_json(exclude_unset=True)}")
     
     managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
     
+    history_json = {
+        "conversation_id": conversation_id,
+        "messages": [message.model_dump() for message in managed_conversation]
+    }
+    logging.info(f"Appending conversation history: {json.dumps(history_json)}")
+    
+
     query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
     logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
     
     async def generate():
         try:
+            logging.info(f"Sending query to DuckDuckGo for conversation {conversation_id}")
             results = DDGS().chat(query, model=request.model)
-
+            logging.info(f"Received response from DuckDuckGo for conversation {conversation_id}: {len(results)} characters")
+    
             chunk_size = 10  # 10 chars per sec is a good rate for streaming
             for i in range(0, len(results), chunk_size):
                 chunk = results[i:i+chunk_size]
@@ -135,16 +143,25 @@ async def chat_completion(request: ChatCompletionRequest):
                         }
                     ]
                 }
+                logging.debug(f"Streaming chunk for conversation {conversation_id}: {chunk}")
                 yield f"data: {json.dumps(response)}\n\n"
-                await asyncio.sleep(0.1)  #force streaming
+                await asyncio.sleep(0.1)  # simulate streaming
 
             manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
 
             yield "data: [DONE]\n\n"
+            logging.info(f"Completed streaming response for conversation {conversation_id}")
         except Exception as e:
-            logging.error(f"Exception occurred: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-
+            logging.error(f"Exception occurred during streaming for conversation {conversation_id}: {str(e)}")
+            error_response = {
+                "error": {
+                    "message": str(e),
+                    "type": "internal_error",
+                    "code": 500
+                }
+            }
+            yield f"data: {json.dumps(error_response)}\n\n"
+    
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/v1/chat/completions/non-streaming")
@@ -152,13 +169,21 @@ async def chat_completion_non_streaming(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
     
     logging.info(f"Received non-streaming request for conversation {conversation_id}")
+    logging.debug(f"Request content: {request.model_dump_json(exclude_unset=True)}")
     
     managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
+    
+    history_json = {
+        "conversation_id": conversation_id,
+        "messages": [message.model_dump() for message in managed_conversation]
+    }
+    logging.info(f"Appending conversation history: {json.dumps(history_json)}")
     
     query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
     logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
     
     try:
+        logging.info(f"Sending query for conversation {conversation_id}")
         results = DDGS().chat(query, model=request.model)
         logging.info(f"Generated response for conversation {conversation_id}: {len(results)} characters")
         response = {
@@ -185,10 +210,10 @@ async def chat_completion_non_streaming(request: ChatCompletionRequest):
 
         manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
 
-        logging.info(f"Sending response for conversation {conversation_id}")
+        logging.info(f"Sending non-streaming response for conversation {conversation_id}")
         return JSONResponse(content=response, media_type="application/json")
     except Exception as e:
-        logging.error(f"Exception occurred: {str(e)}")
+        logging.error(f"Exception occurred during non-streaming response for conversation {conversation_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/v1/conversations/{conversation_id}")
