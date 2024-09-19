@@ -7,6 +7,8 @@ import logging
 import uuid
 import time
 import json
+import asyncio
+import random
 import httpx
 
 app = FastAPI()
@@ -135,24 +137,34 @@ async def chat_completion(request: ChatCompletionRequest):
 
     async def generate():
         try:
+            full_response = ""
             async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
-                response = {
-                    "id": conversation_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": request.model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {
-                                "role": "assistant",
-                                "content": chunk
-                            },
-                            "finish_reason": None
-                        }
-                    ]
-                }
-                yield f"data: {json.dumps(response)}\n\n"
+                full_response += chunk
+                
+                while len(full_response) > 0:
+                    # average chunk size for LLMs that i've seen
+                    chunk_size = random.randint(15, 35)
+                    part = full_response[:chunk_size]
+                    full_response = full_response[chunk_size:]
+
+                    response = {
+                        "id": conversation_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": request.model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {
+                                    "role": "assistant",
+                                    "content": part
+                                },
+                                "finish_reason": None
+                            }
+                        ]
+                    }
+                    yield f"data: {json.dumps(response)}\n\n"
+                    await asyncio.sleep(random.uniform(0.05, 0.1))
 
             yield "data: [DONE]\n\n"
         except Exception as e:
