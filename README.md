@@ -4,7 +4,7 @@
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls.
 
   
-This is done by interacting with DuckDuckGo's AI chat functionality. Previously, this was achieved using the DuckDuckGo Python library, but the dependency has been removed. Now, the chat interactions are handled directly through HTTP requests instead.
+This is done by interacting with DuckDuckGo's AI chat functionality. Previously, this was achieved using the DuckDuckGo Python library (using the [chat() function](https://pypi.org/project/duckduckgo-search)), but the dependency has been removed due to its limitations. Now, the chat interactions are handled directly through HTTP requests instead.
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
