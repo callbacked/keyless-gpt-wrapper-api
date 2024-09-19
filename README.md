@@ -4,8 +4,7 @@
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls.
 
   
-This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search), which allows you to use AI models, like GPT4o Mini and Claude 3 Haiku. From there I made an OpenAI Compatible API to make sure I can use it in other services.
-
+This is done by interacting with DuckDuckGo's AI chat functionality. Previously, this was achieved using the DuckDuckGo Python library, but the dependency has been removed. Now, the chat interactions are handled directly through HTTP requests instead.
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
