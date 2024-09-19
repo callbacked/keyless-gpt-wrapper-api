@@ -2,14 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-from duckduckgo_search import DDGS
 from fastapi.responses import JSONResponse, StreamingResponse
 import logging
 import uuid
 import time
 import json
-import re
-import asyncio
+import httpx
 
 app = FastAPI()
 
@@ -48,46 +46,71 @@ class ChatCompletionResponse(BaseModel):
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
+current_vqd_token = ""
 
-def compress_text(text):
-    original_length = len(text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    compressed_length = len(text)
-    compression_ratio = (original_length - compressed_length) / original_length * 100 if original_length else 0
-    logging.info(f"Compressed text from {original_length} to {compressed_length} characters. Compression ratio: {compression_ratio:.2f}%")
-    return text
+async def update_vqd_token():
+    global current_vqd_token
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.get("https://duckduckgo.com/country.json")
+            headers = {"x-vqd-accept": "1"}
+            response = await client.get("https://duckduckgo.com/duckchat/v1/status", headers=headers)
+            if response.status_code == 200:
+                current_vqd_token = response.headers.get("x-vqd-4", current_vqd_token)
+                logging.info(f"Updated x-vqd-4 token: {current_vqd_token}")
+            else:
+                logging.warning(f"Failed to update x-vqd-4 token. Status code: {response.status_code}")
+        except Exception as e:
+            logging.error(f"Error updating x-vqd-4 token: {str(e)}")
 
-def manage_conversation_context(conversations, conversation_id, new_messages, max_chars=20000): # turns out its 20k!
-    current_conversation = conversations.get(conversation_id, [])
-    
-    initial_char_count = sum(len(m.content) for m in current_conversation)
-    initial_message_count = len(current_conversation)
-    logging.info(f"Initial state for conversation {conversation_id}: {initial_char_count} characters, {initial_message_count} messages")
-    
-    for message in new_messages:
-        message.content = compress_text(message.content)
-    
-    current_conversation.extend(new_messages)
-    
-    total_chars = sum(len(m.content) for m in current_conversation)
-    
-    removed_messages = 0
-    while total_chars > max_chars:
-        if current_conversation:
-            removed_msg = current_conversation.pop(0)
-            removed_messages += 1
-            logging.info(f"Removed message: {removed_msg.role} - {removed_msg.content[:50]}...")
-        else:
-            break  
-        total_chars = sum(len(m.content) for m in current_conversation)
-    
-    final_char_count = total_chars
-    final_message_count = len(current_conversation)
-    logging.info(f"Final state for conversation {conversation_id}: {final_char_count} characters, {final_message_count} messages")
-    logging.info(f"Removed {removed_messages} messages to stay within the limit")
-    
-    conversations[conversation_id] = current_conversation
-    return current_conversation
+async def chat_with_duckduckgo(query: str, model: str, conversation_history: List[ChatMessage]):
+    global current_vqd_token
+
+    await update_vqd_token()
+
+    user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
+    payload = {
+        "messages": user_messages,
+        "model": model
+    }
+
+    headers = {
+        "x-vqd-4": current_vqd_token,
+        "Content-Type": "application/json"
+    }
+
+    logging.info(f"Sending payload to DuckDuckGo: {json.dumps(payload)}")
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post("https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers)
+            if response.status_code == 200:
+                full_response = ""
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:].strip()
+                        if data == "[DONE]":
+                            break
+                        try:
+                            json_data = json.loads(data)
+                            message = json_data.get("message", "")
+                            full_response += message
+                            yield message
+                        except json.JSONDecodeError:
+                            logging.warning(f"Failed to parse JSON: {data}")
+                logging.info(f"Full response from DuckDuckGo: {full_response}")
+            else:
+                logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
+                raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
+        except httpx.HTTPStatusError as e:
+            logging.error(f"HTTP error occurred: {str(e)}")
+            raise HTTPException(status_code=e.response.status_code, detail=str(e))
+        except httpx.RequestError as e:
+            logging.error(f"Request error occurred: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            logging.error(f"Unexpected error in chat_with_duckduckgo: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/v1/models")
 async def list_models():
@@ -95,38 +118,24 @@ async def list_models():
     models = [
         ModelInfo(id="gpt-4o-mini"),
         ModelInfo(id="claude-3-haiku"),
-        ModelInfo(id="mixtral-8x7b")
+        ModelInfo(id="mixtral-8x7b"),
+        ModelInfo(id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo")
     ]
     return {"data": models, "object": "list"}
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
-    
-    logging.info(f"Received streaming request for conversation {conversation_id}")
-    logging.debug(f"Request content: {request.model_dump_json(exclude_unset=True)}")
-    
-    managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
-    
-    history_json = {
-        "conversation_id": conversation_id,
-        "messages": [message.model_dump() for message in managed_conversation]
-    }
-    logging.info(f"Appending conversation history: {json.dumps(history_json)}")
-    
 
-    query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
-    logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
-    
+    logging.info(f"Received streaming request for conversation {conversation_id}")
+    logging.info(f"Request: {request.model_dump()}")
+
+    conversation_history = conversations.get(conversation_id, [])
+    conversation_history.extend(request.messages)
+
     async def generate():
         try:
-            logging.info(f"Sending query to DuckDuckGo for conversation {conversation_id}")
-            results = DDGS().chat(query, model=request.model)
-            logging.info(f"Received response from DuckDuckGo for conversation {conversation_id}: {len(results)} characters")
-    
-            chunk_size = 10  # 10 chars per sec is a good rate for streaming
-            for i in range(0, len(results), chunk_size):
-                chunk = results[i:i+chunk_size]
+            async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
                 response = {
                     "id": conversation_id,
                     "object": "chat.completion.chunk",
@@ -143,49 +152,30 @@ async def chat_completion(request: ChatCompletionRequest):
                         }
                     ]
                 }
-                logging.debug(f"Streaming chunk for conversation {conversation_id}: {chunk}")
                 yield f"data: {json.dumps(response)}\n\n"
-                await asyncio.sleep(0.1)  # simulate streaming
-
-            manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
 
             yield "data: [DONE]\n\n"
-            logging.info(f"Completed streaming response for conversation {conversation_id}")
         except Exception as e:
-            logging.error(f"Exception occurred during streaming for conversation {conversation_id}: {str(e)}")
-            error_response = {
-                "error": {
-                    "message": str(e),
-                    "type": "internal_error",
-                    "code": 500
-                }
-            }
-            yield f"data: {json.dumps(error_response)}\n\n"
-    
+            logging.error(f"Error during streaming: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.post("/v1/chat/completions/non-streaming")
 async def chat_completion_non_streaming(request: ChatCompletionRequest):
     conversation_id = request.conversation_id or str(uuid.uuid4())
-    
+
     logging.info(f"Received non-streaming request for conversation {conversation_id}")
-    logging.debug(f"Request content: {request.model_dump_json(exclude_unset=True)}")
-    
-    managed_conversation = manage_conversation_context(conversations, conversation_id, request.messages)
-    
-    history_json = {
-        "conversation_id": conversation_id,
-        "messages": [message.model_dump() for message in managed_conversation]
-    }
-    logging.info(f"Appending conversation history: {json.dumps(history_json)}")
-    
-    query = " ".join([msg.content for msg in managed_conversation if msg.role != "system"])
-    logging.info(f"Generated query for conversation {conversation_id}: {len(query)} characters")
-    
+    logging.info(f"Request: {request.model_dump()}")
+
+    conversation_history = conversations.get(conversation_id, [])
+    conversation_history.extend(request.messages)
+
     try:
-        logging.info(f"Sending query for conversation {conversation_id}")
-        results = DDGS().chat(query, model=request.model)
-        logging.info(f"Generated response for conversation {conversation_id}: {len(results)} characters")
+        full_response = ""
+        async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
+            full_response += chunk
+        
         response = {
             "id": conversation_id,
             "object": "chat.completion",
@@ -196,21 +186,21 @@ async def chat_completion_non_streaming(request: ChatCompletionRequest):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": results
+                        "content": full_response
                     },
                     "finish_reason": "stop"
                 }
             ],
             "usage": {
-                "prompt_tokens": len(query),
-                "completion_tokens": len(results),
-                "total_tokens": len(query) + len(results)
+                "prompt_tokens": sum(len(msg.content) for msg in conversation_history),
+                "completion_tokens": len(full_response),
+                "total_tokens": sum(len(msg.content) for msg in conversation_history) + len(full_response)
             }
         }
 
-        manage_conversation_context(conversations, conversation_id, [ChatMessage(role="assistant", content=results)])
-
-        logging.info(f"Sending non-streaming response for conversation {conversation_id}")
+        conversation_history.append(ChatMessage(role="assistant", content=full_response))
+        conversations[conversation_id] = conversation_history
+        
         return JSONResponse(content=response, media_type="application/json")
     except Exception as e:
         logging.error(f"Exception occurred during non-streaming response for conversation {conversation_id}: {str(e)}")

@@ -4,21 +4,16 @@
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls.
 
   
-This is done by using the DuckDuckGo Python library, and using its [chat() function](https://pypi.org/project/duckduckgo-search), which allows you to use AI models, like GPT4o Mini and Claude 3 Haiku. From there I made an OpenAI Compatible API to make sure I can use it in other services.
-
+This is done by interacting with DuckDuckGo's AI chat functionality. Previously, this was achieved using the DuckDuckGo Python library (using the [chat() function](https://pypi.org/project/duckduckgo-search)), but the dependency has been removed due to its limitations. Now, the chat interactions are handled directly through HTTP requests instead.
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
-In my time making this API I found some limitations from using the DuckDuckGo Python Library:
+In my time making this API I found some limitations from interacting with DuckDuckGo's AI chat:
 
 
 1. Cannot send images
 
-    1a. Havent figured this one out yet
-
-3. Context length for a given conversation session is up to 20k characters, this is because your conversation history is appended in each message you send. DuckDuckGo Chat's frontend does something similar but without sacrificing on character length (don't know how), because each message is treated as a new chat session for what I assume is for privacy reasons.
-
-    2a. As a way to work within the bounds of this, the messages are compressed by removing whitespace in order to retain more characters. Giving it a "lengthier" context. Once you approach the context limit, old messages start getting pruned from its context.
+    1a. Havent figured this one out yet (probably never will)
 
 *Do not expect frequent updates, I'll be using this until it breaks pretty much.*
 
@@ -115,10 +110,10 @@ curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
 In cases where you want to continue having a conversion you can keep note of the conversation_id generated, for instance:
 
   
-You send your initial message (using curl as an example)
+You send your initial message (using curl as an example): **use non-streaming always**
 
  ```
- curl -X POST "http://localhost:1337/v1/chat/completions" \
+ curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
 -H "Content-Type: application/json" \
 -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
 -H "Accept: text/event-stream"
@@ -126,43 +121,40 @@ You send your initial message (using curl as an example)
 You receive:
 ```
 {
+  "id": "1cecdf45-df73-431b-884b-6d233b5511c7", <========= TAKE NOTE OF THIS
+  "object": "chat.completion",
+  "created": 1726725779,
   "model": "gpt-4o-mini",
-  "messages": [
+  "choices": [
     {
-      "role": "user",
-      "content": "Tell me a joke"
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Why did the scarecrow win an award? \n\nBecause he was outstanding in his field!"
+      },
+      "finish_reason": "stop"
     }
   ],
-  "data": {
-    "id": "ca218944-3bc0-41c6-8b9e-37ad52407bb9",   <========== TAKE NOTE OF THIS
-    "object": "chat.completion.chunk",
-    "created": 1726380683,
-    "model": "gpt-4o-mini",
-    "choices": [
-      {
-        "index": 0,
-        "delta": {
-          "role": "assistant",
-          "content": "Why did the scarecrow win an award? \n\nBecause he was outstanding in his field!"
-        },
-        "finish_reason": null
-      }
-    ]
-  },
-  "data_status": "[DONE]"
+  "usage": {
+    "prompt_tokens": 14,
+    "completion_tokens": 78,
+    "total_tokens": 92
+  }
 }
 ```
 
 With the response received, you can send a follow-up question with the conversation_id appended at the end:
 
-
-
 ```
-curl -X POST http://127.0.0.1:1337/v1/chat/completions \
+curl -X POST http://127.0.0.1:1337/v1/chat/completions/non-streaming \
 -H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "ca218944-3bc0-41c6-8b9e-37ad52407bb9"}'
+-d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "1cecdf45-df73-431b-884b-6d233b5511c7"}'
 ```
 
 #### Deleting a conversation
 
-``curl -X DELETE http://127.0.0.1:1337/v1/conversations/ca218944-3bc0-41c6-8b9e-37ad52407bb9``
+``curl -X DELETE http://127.0.0.1:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7``
+
+
+
+
