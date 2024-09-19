@@ -115,10 +115,10 @@ curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
 In cases where you want to continue having a conversion you can keep note of the conversation_id generated, for instance:
 
   
-You send your initial message (using curl as an example)
+You send your initial message (using curl as an example): **use non-streaming always**
 
  ```
- curl -X POST "http://localhost:1337/v1/chat/completions" \
+ curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
 -H "Content-Type: application/json" \
 -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
 -H "Accept: text/event-stream"
@@ -126,43 +126,40 @@ You send your initial message (using curl as an example)
 You receive:
 ```
 {
+  "id": "1cecdf45-df73-431b-884b-6d233b5511c7", <========= TAKE NOTE OF THIS
+  "object": "chat.completion",
+  "created": 1726725779,
   "model": "gpt-4o-mini",
-  "messages": [
+  "choices": [
     {
-      "role": "user",
-      "content": "Tell me a joke"
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Why did the scarecrow win an award? \n\nBecause he was outstanding in his field!"
+      },
+      "finish_reason": "stop"
     }
   ],
-  "data": {
-    "id": "ca218944-3bc0-41c6-8b9e-37ad52407bb9",   <========== TAKE NOTE OF THIS
-    "object": "chat.completion.chunk",
-    "created": 1726380683,
-    "model": "gpt-4o-mini",
-    "choices": [
-      {
-        "index": 0,
-        "delta": {
-          "role": "assistant",
-          "content": "Why did the scarecrow win an award? \n\nBecause he was outstanding in his field!"
-        },
-        "finish_reason": null
-      }
-    ]
-  },
-  "data_status": "[DONE]"
+  "usage": {
+    "prompt_tokens": 14,
+    "completion_tokens": 78,
+    "total_tokens": 92
+  }
 }
 ```
 
 With the response received, you can send a follow-up question with the conversation_id appended at the end:
 
-
-
 ```
-curl -X POST http://127.0.0.1:1337/v1/chat/completions \
+curl -X POST http://127.0.0.1:1337/v1/chat/completions/non-streaming \
 -H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "ca218944-3bc0-41c6-8b9e-37ad52407bb9"}'
+-d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "1cecdf45-df73-431b-884b-6d233b5511c7"}'
 ```
 
 #### Deleting a conversation
 
-``curl -X DELETE http://127.0.0.1:1337/v1/conversations/ca218944-3bc0-41c6-8b9e-37ad52407bb9``
+``curl -X DELETE http://127.0.0.1:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7``
+
+
+
+

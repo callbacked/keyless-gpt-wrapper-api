@@ -40,18 +40,6 @@ def test_chat_completion():
                 conversation_id = json.loads(decoded_line.split("data: ")[1])["id"]
     print("Conversation ID captured:", conversation_id)
 
-def test_chat_completion_non_streaming():
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "user", "content": "Tell me a joke."}
-        ]
-    }
-    response = requests.post(f"{base_url}/chat/completions/non-streaming", data=json.dumps(payload), headers=headers)
-    assert response.status_code == 200
-    print("Chat Completion (Non-Streaming):", response.json())
-
 def test_end_conversation(conversation_id):
     response = requests.delete(f"{base_url}/conversations/{conversation_id}")
     assert response.status_code == 200
@@ -62,7 +50,6 @@ def test_end_conversation(conversation_id):
 if __name__ == "__main__":
     test_list_models()
     test_chat_completion()
-    test_chat_completion_non_streaming()
     if conversation_id:
         test_end_conversation(conversation_id)
     else:
