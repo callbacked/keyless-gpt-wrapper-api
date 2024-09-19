@@ -119,7 +119,8 @@ async def list_models():
     models = [
         ModelInfo(id="gpt-4o-mini"),
         ModelInfo(id="claude-3-haiku"),
-        ModelInfo(id="mixtral-8x7b")
+        ModelInfo(id="mixtral-8x7b"),
+        ModelInfo(id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo")
     ]
     return {"data": models, "object": "list"}
 
@@ -132,7 +133,7 @@ async def chat_completion(request: ChatCompletionRequest):
 
     conversation_history = conversations.get(conversation_id, [])
     conversation_history.extend(request.messages)
-    
+
     async def generate():
         try:
             async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
