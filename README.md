@@ -8,16 +8,12 @@ This is done by interacting with DuckDuckGo's AI chat functionality. Previously,
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
-In my time making this API I found some limitations from using the DuckDuckGo Python Library:
+In my time making this API I found some limitations from interacting with DuckDuckGo's AI chat:
 
 
 1. Cannot send images
 
-    1a. Havent figured this one out yet
-
-3. Context length for a given conversation session is up to 20k characters, this is because your conversation history is appended in each message you send. DuckDuckGo Chat's frontend does something similar but without sacrificing on character length (don't know how), because each message is treated as a new chat session for what I assume is for privacy reasons.
-
-    2a. As a way to work within the bounds of this, the messages are compressed by removing whitespace in order to retain more characters. Giving it a "lengthier" context. Once you approach the context limit, old messages start getting pruned from its context.
+    1a. Havent figured this one out yet (probably never will)
 
 *Do not expect frequent updates, I'll be using this until it breaks pretty much.*
 
