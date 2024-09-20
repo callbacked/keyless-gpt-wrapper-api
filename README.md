@@ -8,12 +8,9 @@ This is done by interacting with DuckDuckGo's AI chat functionality. Previously,
   
 **Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
 
-In my time making this API I found some limitations from interacting with DuckDuckGo's AI chat:
+In my time making this API I found a limitation from interacting with DuckDuckGo's AI chat:
 
-
-1. Cannot send images
-
-    1a. Havent figured this one out yet (probably never will)
+1. Cannot send images (Havent figured this one out yet, probably never will)
 
 *Do not expect frequent updates, I'll be using this until it breaks pretty much.*
 
@@ -82,6 +79,12 @@ You can set up with Docker through one of two ways, its up to personal preferenc
 
 #### Calling upon available models
 ``curl -X GET http://127.0.0.1:1337/v1/models``
+
+So far you can use:
+- GPT4o Mini
+- Claude 3 Haiku
+- Mixtral 8x7b
+- Llama 70b Instruct Turbo 
 
 #### Sending a message
 
