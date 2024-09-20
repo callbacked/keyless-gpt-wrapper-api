@@ -6,7 +6,7 @@ I wanted to use GPT-4o-mini like I would normally do on the website (for free), 
   
 This is done by interacting with DuckDuckGo's AI chat functionality. Previously, this was achieved using the DuckDuckGo Python library (using the [chat() function](https://pypi.org/project/duckduckgo-search)), but the dependency has been removed due to its limitations. Now, the chat interactions are handled directly through HTTP requests instead.
   
-**Note:** I know it works with the Continue.dev VSCode extension and Ollama Open Web UI, have not tested it on anything else, so YMMV
+**Note:** I know it works with the Continue.dev VSCode extension, Ollama Open Web UI and Aider, have not tested it on anything else, so YMMV
 
 In my time making this API I found a limitation from interacting with DuckDuckGo's AI chat:
 
@@ -18,6 +18,10 @@ In my time making this API I found a limitation from interacting with DuckDuckGo
 
 
 # Example Demo Usage
+
+
+
+https://github.com/user-attachments/assets/e4032e31-d12e-4f66-9d27-8932a146811e
 
 
 
