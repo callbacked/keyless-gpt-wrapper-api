@@ -1,8 +1,8 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict, Optional
-from fastapi.responses import JSONResponse, StreamingResponse
+from typing import List, Dict, Optional, Union
+from fastapi.responses import StreamingResponse
 import logging
 import uuid
 import time
@@ -26,7 +26,7 @@ app.add_middleware(
 class ModelInfo(BaseModel):
     id: str
     object: str = "model"
-    created: int = 1677610602
+    created: int = int(time.time())
     owned_by: str = "custom"
 
 class ChatMessage(BaseModel):
@@ -36,15 +36,50 @@ class ChatMessage(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model: str
     messages: List[ChatMessage]
-    conversation_id: Optional[str] = None
+    temperature: Optional[float] = 1.0
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    stream: Optional[bool] = False
+    stop: Optional[Union[str, List[str]]] = None
+    max_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
+    logit_bias: Optional[Dict[str, float]] = None
+    user: Optional[str] = None
+
+class ChatCompletionResponseChoice(BaseModel):
+    index: int
+    message: ChatMessage
+    finish_reason: Optional[str] = None
+
+class ChatCompletionResponseUsage(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
 
 class ChatCompletionResponse(BaseModel):
     id: str
     object: str = "chat.completion"
     created: int
     model: str
-    choices: List[dict]
-    usage: dict
+    choices: List[ChatCompletionResponseChoice]
+    usage: ChatCompletionResponseUsage
+
+class DeltaMessage(BaseModel):
+    role: Optional[str] = None
+    content: Optional[str] = None
+
+class ChatCompletionStreamResponseChoice(BaseModel):
+    index: int
+    delta: DeltaMessage
+    finish_reason: Optional[str] = None
+
+class ChatCompletionStreamResponse(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: List[ChatCompletionStreamResponseChoice]
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
@@ -100,7 +135,7 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
                             yield message
                         except json.JSONDecodeError:
                             logging.warning(f"Failed to parse JSON: {data}")
-                logging.info(f"Full response from DuckDuckGo: {full_response}")
+                # logging.info(f"Full response from DuckDuckGo: {full_response}")
             else:
                 logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
                 raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
@@ -127,9 +162,9 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
-    conversation_id = request.conversation_id or str(uuid.uuid4())
+    conversation_id = str(uuid.uuid4())
 
-    logging.info(f"Received streaming request for conversation {conversation_id}")
+    logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
 
     conversation_history = conversations.get(conversation_id, [])
@@ -141,82 +176,68 @@ async def chat_completion(request: ChatCompletionRequest):
             async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
                 full_response += chunk
                 
-                while len(full_response) > 0:
-                    # average chunk size for LLMs that i've seen
-                    chunk_size = random.randint(15, 35)
-                    part = full_response[:chunk_size]
-                    full_response = full_response[chunk_size:]
+                response = ChatCompletionStreamResponse(
+                    id=conversation_id,
+                    created=int(time.time()),
+                    model=request.model,
+                    choices=[
+                        ChatCompletionStreamResponseChoice(
+                            index=0,
+                            delta=DeltaMessage(content=chunk),
+                            finish_reason=None
+                        )
+                    ]
+                )
+                yield f"data: {response.model_dump_json()}\n\n"
+                await asyncio.sleep(random.uniform(0.05, 0.1))
 
-                    response = {
-                        "id": conversation_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": request.model,
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": {
-                                    "role": "assistant",
-                                    "content": part
-                                },
-                                "finish_reason": None
-                            }
-                        ]
-                    }
-                    yield f"data: {json.dumps(response)}\n\n"
-                    await asyncio.sleep(random.uniform(0.05, 0.1))
-
+            final_response = ChatCompletionStreamResponse(
+                id=conversation_id,
+                created=int(time.time()),
+                model=request.model,
+                choices=[
+                    ChatCompletionStreamResponseChoice(
+                        index=0,
+                        delta=DeltaMessage(),
+                        finish_reason="stop"
+                    )
+                ]
+            )
+            yield f"data: {final_response.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
             logging.error(f"Error during streaming: {str(e)}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
-
-@app.post("/v1/chat/completions/non-streaming")
-async def chat_completion_non_streaming(request: ChatCompletionRequest):
-    conversation_id = request.conversation_id or str(uuid.uuid4())
-
-    logging.info(f"Received non-streaming request for conversation {conversation_id}")
-    logging.info(f"Request: {request.model_dump()}")
-
-    conversation_history = conversations.get(conversation_id, [])
-    conversation_history.extend(request.messages)
-
-    try:
+    if request.stream:
+        return StreamingResponse(generate(), media_type="text/event-stream")
+    else:
         full_response = ""
         async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
             full_response += chunk
-        
-        response = {
-            "id": conversation_id,
-            "object": "chat.completion",
-            "created": int(time.time()),
-            "model": request.model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": full_response
-                    },
-                    "finish_reason": "stop"
-                }
+
+        response = ChatCompletionResponse(
+            id=conversation_id,
+            created=int(time.time()),
+            model=request.model,
+            choices=[
+                ChatCompletionResponseChoice(
+                    index=0,
+                    message=ChatMessage(role="assistant", content=full_response),
+                    finish_reason="stop"
+                )
             ],
-            "usage": {
-                "prompt_tokens": sum(len(msg.content) for msg in conversation_history),
-                "completion_tokens": len(full_response),
-                "total_tokens": sum(len(msg.content) for msg in conversation_history) + len(full_response)
-            }
-        }
+            usage=ChatCompletionResponseUsage(
+                prompt_tokens=sum(len(msg.content.split()) for msg in conversation_history),
+                completion_tokens=len(full_response.split()),
+                total_tokens=sum(len(msg.content.split()) for msg in conversation_history) + len(full_response.split())
+            )
+        )
 
         conversation_history.append(ChatMessage(role="assistant", content=full_response))
         conversations[conversation_id] = conversation_history
         
-        return JSONResponse(content=response, media_type="application/json")
-    except Exception as e:
-        logging.error(f"Exception occurred during non-streaming response for conversation {conversation_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return response
 
 @app.delete("/v1/conversations/{conversation_id}")
 async def end_conversation(conversation_id: str):

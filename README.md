@@ -82,48 +82,48 @@ You can set up with Docker through one of two ways, its up to personal preferenc
 
 #### Calling upon available models
 ``curl -X GET http://127.0.0.1:1337/v1/models``
-#### Receiving streamed message (message sent in chunks)
 
-Where ``"content":`` is where you put your message
+#### Sending a message
+
+Where ``"content":`` is where you put your message, 
 ```
 curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
--H "Accept: text/event-stream"
+-d '{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {"role": "user", "content": "Tell me a joke"}
+  ],
+  "stream": false
+}'
 ```
-  
-
-#### Receiving non-streamed messaged (message sent at once)
-
-```
-curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
--H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}'
-```
+**``stream: true`` if you want your response to be streamed in or ``stream: false`` if you want the response to be given to you all at once, though ``stream:false`` is highly recommended for readibility**
 
 ## Retaining conversation context
 
-  
-
-  
 
 In cases where you want to continue having a conversion you can keep note of the conversation_id generated, for instance:
 
   
-You send your initial message (using curl as an example): **use non-streaming always**
+You send your initial message (using curl as an example): **use ``stream:false`` for readibility**
 
  ```
- curl -X POST "http://localhost:1337/v1/chat/completions/non-streaming" \
+curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me a joke"}]}' \
--H "Accept: text/event-stream"
+-d '{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {"role": "user", "content": "Tell me a joke"}
+  ],
+  "stream": false
+}'
 ```
 You receive:
 ```
 {
-  "id": "1cecdf45-df73-431b-884b-6d233b5511c7", <========= TAKE NOTE OF THIS
+  "id": "58a22f8d-64b8-45c1-97c4-030d11e6d1b9", <======== TAKE NOTE OF THIS
   "object": "chat.completion",
-  "created": 1726725779,
+  "created": 1726798732,
   "model": "gpt-4o-mini",
   "choices": [
     {
@@ -136,19 +136,27 @@ You receive:
     }
   ],
   "usage": {
-    "prompt_tokens": 14,
-    "completion_tokens": 78,
-    "total_tokens": 92
+    "prompt_tokens": 4,
+    "completion_tokens": 14,
+    "total_tokens": 18
   }
 }
+
 ```
 
 With the response received, you can send a follow-up question with the conversation_id appended at the end:
 
 ```
-curl -X POST http://127.0.0.1:1337/v1/chat/completions/non-streaming \
+curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
--d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Tell me another"}], "conversation_id": "1cecdf45-df73-431b-884b-6d233b5511c7"}'
+-d '{
+  "model": "gpt-4o-mini",
+  "messages": [
+    {"role": "user", "content": "Tell me a joke"}
+  ],
+  "conversation_id": "58a22f8d-64b8-45c1-97c4-030d11e6d1b9",
+  "stream": false
+}'
 ```
 
 #### Deleting a conversation
