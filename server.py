@@ -10,6 +10,7 @@ import json
 import asyncio
 import random
 import httpx
+from fake_useragent import UserAgent
 
 app = FastAPI()
 
@@ -83,27 +84,34 @@ class ChatCompletionStreamResponse(BaseModel):
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
-current_vqd_token = ""
 
-async def update_vqd_token():
-    global current_vqd_token
+ua = UserAgent()
+
+def get_next_user_agent():
+    return ua.random
+
+async def update_vqd_token(user_agent):
     async with httpx.AsyncClient() as client:
         try:
-            await client.get("https://duckduckgo.com/country.json")
-            headers = {"x-vqd-accept": "1"}
+            await client.get("https://duckduckgo.com/country.json", headers={"User-Agent": user_agent})
+            headers = {"x-vqd-accept": "1", "User-Agent": user_agent}
             response = await client.get("https://duckduckgo.com/duckchat/v1/status", headers=headers)
             if response.status_code == 200:
-                current_vqd_token = response.headers.get("x-vqd-4", current_vqd_token)
-                logging.info(f"Updated x-vqd-4 token: {current_vqd_token}")
+                vqd_token = response.headers.get("x-vqd-4", "")
+                logging.info(f"Fetched new x-vqd-4 token: {vqd_token}")
+                return vqd_token
             else:
-                logging.warning(f"Failed to update x-vqd-4 token. Status code: {response.status_code}")
+                logging.warning(f"Failed to fetch x-vqd-4 token. Status code: {response.status_code}")
+                return ""
         except Exception as e:
-            logging.error(f"Error updating x-vqd-4 token: {str(e)}")
+            logging.error(f"Error fetching x-vqd-4 token: {str(e)}")
+            return ""
 
 async def chat_with_duckduckgo(query: str, model: str, conversation_history: List[ChatMessage]):
-    global current_vqd_token
-
-    await update_vqd_token()
+    user_agent = get_next_user_agent()
+    vqd_token = await update_vqd_token(user_agent)
+    if not vqd_token:
+        raise HTTPException(status_code=500, detail="Failed to obtain VQD token")
 
     user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
     payload = {
@@ -112,11 +120,12 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
     }
 
     headers = {
-        "x-vqd-4": current_vqd_token,
-        "Content-Type": "application/json"
+        "x-vqd-4": vqd_token,
+        "Content-Type": "application/json",
+        "User-Agent": user_agent
     }
 
-    logging.info(f"Sending payload to DuckDuckGo: {json.dumps(payload)}")
+    logging.info(f"Sending payload to DuckDuckGo with User-Agent: {user_agent}")
 
     async with httpx.AsyncClient() as client:
         try:
@@ -135,7 +144,30 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
                             yield message
                         except json.JSONDecodeError:
                             logging.warning(f"Failed to parse JSON: {data}")
-                # logging.info(f"Full response from DuckDuckGo: {full_response}")
+            elif response.status_code == 429:
+                logging.warning("Rate limit exceeded. Changing User-Agent and retrying.")
+                for attempt in range(5):  # Try up to 5 times
+                    user_agent = get_next_user_agent()
+                    vqd_token = await update_vqd_token(user_agent)
+                    headers["User-Agent"] = user_agent
+                    headers["x-vqd-4"] = vqd_token
+                    logging.info(f"Retrying with new User-Agent: {user_agent}")
+                    response = await client.post("https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers)
+                    if response.status_code == 200:
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data = line[6:].strip()
+                                if data == "[DONE]":
+                                    break
+                                try:
+                                    json_data = json.loads(data)
+                                    message = json_data.get("message", "")
+                                    yield message
+                                except json.JSONDecodeError:
+                                    logging.warning(f"Failed to parse JSON: {data}")
+                        break
+                else:
+                    raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
             else:
                 logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
                 raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
