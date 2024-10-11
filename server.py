@@ -23,6 +23,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+MODEL_MAPPING = {
+    "keyless-gpt-4o-mini": "gpt-4o-mini",
+    "keyless-claude-3-haiku": "claude-3-haiku",
+    "keyless-mixtral-8x7b": "mixtral-8x7b",
+    "keyless-meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
+}
 
 class ModelInfo(BaseModel):
     id: str
@@ -108,6 +114,7 @@ async def update_vqd_token(user_agent):
             return ""
 
 async def chat_with_duckduckgo(query: str, model: str, conversation_history: List[ChatMessage]):
+    original_model = MODEL_MAPPING.get(model, model)
     user_agent = get_next_user_agent()
     vqd_token = await update_vqd_token(user_agent)
     if not vqd_token:
@@ -116,7 +123,7 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
     user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
     payload = {
         "messages": user_messages,
-        "model": model
+        "model": original_model
     }
 
     headers = {
@@ -184,12 +191,7 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
 @app.get("/v1/models")
 async def list_models():
     logging.info("Listing available models")
-    models = [
-        ModelInfo(id="gpt-4o-mini"),
-        ModelInfo(id="claude-3-haiku"),
-        ModelInfo(id="mixtral-8x7b"),
-        ModelInfo(id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo")
-    ]
+    models = [ModelInfo(id=model_id) for model_id in MODEL_MAPPING.keys()]
     return {"data": models, "object": "list"}
 
 @app.post("/v1/chat/completions")
