@@ -97,7 +97,7 @@ Where ``"content":`` is where you put your message,
 curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
 -d '{
-  "model": "gpt-4o-mini",
+  "model": "keyless-gpt-4o-mini",
   "messages": [
     {"role": "user", "content": "Tell me a joke"}
   ],
@@ -118,7 +118,7 @@ You send your initial message (using curl as an example): **use ``stream:false``
 curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
 -d '{
-  "model": "gpt-4o-mini",
+  "model": "keyless-gpt-4o-mini",
   "messages": [
     {"role": "user", "content": "Tell me a joke"}
   ],
@@ -131,7 +131,7 @@ You receive:
   "id": "58a22f8d-64b8-45c1-97c4-030d11e6d1b9", <======== TAKE NOTE OF THIS
   "object": "chat.completion",
   "created": 1726798732,
-  "model": "gpt-4o-mini",
+  "model": "keyless-gpt-4o-mini",
   "choices": [
     {
       "index": 0,
@@ -157,7 +157,7 @@ With the response received, you can send a follow-up question with the conversat
 curl -X POST "http://localhost:1337/v1/chat/completions" \
 -H "Content-Type: application/json" \
 -d '{
-  "model": "gpt-4o-mini",
+  "model": "keyless-gpt-4o-mini",
   "messages": [
     {"role": "user", "content": "Tell me a joke"}
   ],
