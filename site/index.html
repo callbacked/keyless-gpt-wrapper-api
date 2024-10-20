@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keyless GPT Wrapper API</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css"> 
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="#setup">Setup</a>
+                <a href="https://github.com/callbacked/keyless-gpt-wrapper-api" target="_blank">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h1>Keyless GPT Wrapper API</h1>
+            <p>Connect with DuckDuckGo's AI chat and make API requests to <span id="modelName">LLaMA</span> effortlessly, without cost.</p>
+            <a href="#setup" class="cta-button">Get Started</a>
+        </section>
+
+        <section class="setup" id="setup">
+            <div class="container">
+                <h2>Getting Started</h2>
+                <div class="setup-container">
+                    <div class="tabs">
+                        <div class="tab active" id="localTab">Local Setup</div>
+                        <div class="tab" id="dockerTab">Docker Setup</div>
+                    </div>
+                    <div id="localSetup">
+                        <div class="command-block">
+                            <pre><code>git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                        <div class="command-block">
+                            <pre><code>pip install -r requirements.txt</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                        <div class="command-block">
+                            <pre><code>python server.py</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                    </div>
+                    <div id="dockerSetup" style="display: none;">
+                        <div class="command-block">
+                            <pre><code>git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                        <div class="command-block">
+                            <pre><code>docker build -t keyless-gpt-wrapper-api:latest .</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                        <div class="command-block">
+                            <pre><code>docker-compose up -d</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="api-commands">
+            <h2>API Commands</h2>
+            <div class="bento-container">
+                <div class="bento-item">
+                    <h3>Available Models</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X GET http://127.0.0.1:1337/v1/models</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Lists all available models including GPT4o Mini, Claude 3 Haiku, Mixtral 8x7b, and Llama 70b</p>
+                </div>
+                <div class="bento-item">
+                    <h3>Send a Message</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X POST "http://localhost:1337/v1/chat/completions" \
+-H "Content-Type: application/json" \
+-d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+        {"role": "user", "content": "Tell me a joke"}
+    ],
+    "stream": false
+}'</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Send a message to any available model</p>
+                </div>
+                <div class="bento-item">
+                    <h3>Continue Conversation</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X POST "http://localhost:1337/v1/chat/completions" \
+-H "Content-Type: application/json" \
+-d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+    {"role": "user", "content": "Tell me another joke"}
+    ],
+    "conversation_id": "58a22f8d-64b8-45c1-97c4-030d11e6d1b9",
+    "stream": false
+}'</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Continue a conversation using the conversation_id</p>
+                </div>
+                <div class="bento-item">
+                    <h3>Delete Conversation</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X DELETE http://127.0.0.1:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Delete a specific conversation by its ID</p>
+                </div>
+            </div>
+        </section>
+        <section class="integrate-elsewhere">
+            <h2>Integrate Elsewhere</h2>
+            <p style="color: #bbbbbb; margin-bottom: 40px;">Use the API wrapper in your favorite AI assistant tools and enhance your productivity (Your mileage may vary).</p>
+            <div class="video-wall">
+                <div class="video-item">
+                    <video controls>
+                        <source src="https://github.com/user-attachments/assets/e4032e31-d12e-4f66-9d27-8932a146811e" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="video-overlay">
+                        <p>Using the Wrapper API w/ Aider</p>
+                    </div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="https://github.com/user-attachments/assets/1d5ece0e-201e-4079-915c-f5c3351654fa" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="video-overlay">
+                        <p>Using the Wrapper API w/ Continue.dev</p>
+                    </div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="video-overlay">
+                        <p>Using the Wrapper API w/ Open Web UI</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+    <footer>
+        <p>Made by callbacked :)</p>
+    </footer>
+    <script src="scripts.js"></script>        
+</body>
+</html>
