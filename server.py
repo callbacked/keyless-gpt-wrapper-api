@@ -25,9 +25,9 @@ app.add_middleware(
 )
 MODEL_MAPPING = {
     "keyless-gpt-4o-mini": "gpt-4o-mini",
-    "keyless-claude-3-haiku": "claude-3-haiku",
-    "keyless-mixtral-8x7b": "mixtral-8x7b",
-    "keyless-meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
+    "keyless-claude-3-haiku": "claude-3-haiku-20240307",
+    "keyless-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "keyless-meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
 }
 
 class ModelInfo(BaseModel):
@@ -120,7 +120,13 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
     if not vqd_token:
         raise HTTPException(status_code=500, detail="Failed to obtain VQD token")
 
+    # If there is a system message, add it before the first user message (DDG AI doesnt let us send system messages, so this is a workaround -- fundamentally, it works the same way when setting a system prompt)
+    system_message = next((msg for msg in conversation_history if msg.role == "system"), None)
     user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
+    
+    if system_message and user_messages:
+        user_messages[0]["content"] = f"{system_message.content}\n\n{user_messages[0]['content']}"
+
     payload = {
         "messages": user_messages,
         "model": original_model
