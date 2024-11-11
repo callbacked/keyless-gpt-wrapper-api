@@ -30,7 +30,8 @@
                 <div class="setup-container">
                     <div class="tabs">
                         <div class="tab active" id="localTab">Local Setup</div>
-                        <div class="tab" id="dockerTab">Docker Setup</div>
+                        <div class="tab" id="dockerTab">Docker</div>
+                        <div class="tab" id="dockerLocalTab">Docker (local image build)</div>
                     </div>
                     <div id="localSetup">
                         <div class="command-block">
@@ -48,6 +49,12 @@
                     </div>
                     <div id="dockerSetup" style="display: none;">
                         <div class="command-block">
+                            <pre><code>docker run -p 1337:1337 callbacked/keyless:latest</code></pre>
+                            <button class="copy-button">📋</button>
+                        </div>
+                    </div>
+                    <div id="dockerLocalSetup" style="display: none;">
+                        <div class="command-block">
                             <pre><code>git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api</code></pre>
                             <button class="copy-button">📋</button>
                         </div>
@@ -61,7 +68,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
         </section>
 
         <section class="api-commands">

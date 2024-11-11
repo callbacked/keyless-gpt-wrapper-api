@@ -48,37 +48,40 @@ function backspaceModelName() {
 
 typeModelName();
 
-
 const tabs = document.querySelectorAll('.tab');
 const localSetup = document.getElementById('localSetup');
 const dockerSetup = document.getElementById('dockerSetup');
+const dockerLocalSetup = document.getElementById('dockerLocalSetup');
 
 tabs.forEach(tab => {
     tab.addEventListener('click', () => {
         tabs.forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-
+        
+        // Hide all setup sections first
+        localSetup.style.display = 'none';
+        dockerSetup.style.display = 'none';
+        dockerLocalSetup.style.display = 'none';
+        
+        // Show the appropriate section
         if (tab.id === 'localTab') {
             localSetup.style.display = 'block';
-            dockerSetup.style.display = 'none';
-        } else {
-            localSetup.style.display = 'none';
+        } else if (tab.id === 'dockerTab') {
             dockerSetup.style.display = 'block';
+        } else if (tab.id === 'dockerLocalTab') {
+            dockerLocalSetup.style.display = 'block';
         }
     });
 });
-
 
 document.querySelectorAll('.copy-button').forEach(button => {
     button.addEventListener('click', async () => {
         const commandBlock = button.previousElementSibling;
         const text = commandBlock.textContent;
-
         try {
             await navigator.clipboard.writeText(text);
             button.textContent = '✓';
             button.classList.add('copied');
-            
             setTimeout(() => {
                 button.textContent = '📋';
                 button.classList.remove('copied');
