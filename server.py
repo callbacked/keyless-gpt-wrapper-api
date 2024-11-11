@@ -139,51 +139,49 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
     }
 
     logging.info(f"Sending payload to DuckDuckGo with User-Agent: {user_agent}")
-
+    # swapped to stream using client.stream() - no more artificial streaming
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post("https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers)
-            if response.status_code == 200:
-                full_response = ""
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = line[6:].strip()
-                        if data == "[DONE]":
-                            break
-                        try:
-                            json_data = json.loads(data)
-                            message = json_data.get("message", "")
-                            full_response += message
-                            yield message
-                        except json.JSONDecodeError:
-                            logging.warning(f"Failed to parse JSON: {data}")
-            elif response.status_code == 429:
-                logging.warning("Rate limit exceeded. Changing User-Agent and retrying.")
-                for attempt in range(5):  # Try up to 5 times
-                    user_agent = get_next_user_agent()
-                    vqd_token = await update_vqd_token(user_agent)
-                    headers["User-Agent"] = user_agent
-                    headers["x-vqd-4"] = vqd_token
-                    logging.info(f"Retrying with new User-Agent: {user_agent}")
-                    response = await client.post("https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers)
-                    if response.status_code == 200:
-                        async for line in response.aiter_lines():
-                            if line.startswith("data: "):
-                                data = line[6:].strip()
-                                if data == "[DONE]":
-                                    break
-                                try:
-                                    json_data = json.loads(data)
-                                    message = json_data.get("message", "")
-                                    yield message
-                                except json.JSONDecodeError:
-                                    logging.warning(f"Failed to parse JSON: {data}")
-                        break
+            async with client.stream('POST', "https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers) as response:
+                if response.status_code == 200:
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            data = line[6:].strip()
+                            if data == "[DONE]":
+                                break
+                            try:
+                                json_data = json.loads(data)
+                                message = json_data.get("message", "")
+                                yield message
+                            except json.JSONDecodeError:
+                                logging.warning(f"Failed to parse JSON: {data}")
+                elif response.status_code == 429:
+                    for attempt in range(5): # Try up to 5 times
+                        user_agent = get_next_user_agent()
+                        vqd_token = await update_vqd_token(user_agent)
+                        headers.update({
+                            "User-Agent": user_agent,
+                            "x-vqd-4": vqd_token
+                        })
+                        async with client.stream('POST', "https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers) as retry_response:
+                            if retry_response.status_code == 200:
+                                async for line in retry_response.aiter_lines():
+                                    if line.startswith("data: "):
+                                        data = line[6:].strip()
+                                        if data == "[DONE]":
+                                            break
+                                        try:
+                                            json_data = json.loads(data)
+                                            message = json_data.get("message", "")
+                                            yield message
+                                        except json.JSONDecodeError:
+                                            logging.warning(f"Failed to parse JSON: {data}")
+                                break
+                    else:
+                        raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
                 else:
-                    raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
-            else:
-                logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
-                raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
+                    logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
+                    raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
         except httpx.HTTPStatusError as e:
             logging.error(f"HTTP error occurred: {str(e)}")
             raise HTTPException(status_code=e.response.status_code, detail=str(e))
@@ -212,10 +210,7 @@ async def chat_completion(request: ChatCompletionRequest):
 
     async def generate():
         try:
-            full_response = ""
             async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
-                full_response += chunk
-                
                 response = ChatCompletionStreamResponse(
                     id=conversation_id,
                     created=int(time.time()),
@@ -229,7 +224,6 @@ async def chat_completion(request: ChatCompletionRequest):
                     ]
                 )
                 yield f"data: {response.model_dump_json()}\n\n"
-                await asyncio.sleep(random.uniform(0.05, 0.1))
 
             final_response = ChatCompletionStreamResponse(
                 id=conversation_id,
