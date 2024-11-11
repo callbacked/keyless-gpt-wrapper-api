@@ -1,4 +1,4 @@
-FROM python:3.9.20-slim
+FROM --platform=$TARGETPLATFORM python:3.9.20-slim
 
 # Set the working directory
 WORKDIR /app
