@@ -44,15 +44,15 @@ https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8
 
 3. Perform a test call by running ``python testcalls.py``  **in a separate terminal**
 
-
 # Setting Up Via Docker
+This uses the latest image version in the Docker Hub repository
 
+1.  ``docker run --name keyless -p 1337:1337 callbacked/keyless:latest``
 
-You can set up with Docker through one of two ways, its up to personal preference:
+# Setting Up Via Docker (Building your image locally)
 
-  
+If you don't want to use the Docker Hub image and want to do it yourself, you can do it one of two ways, its up to personal preference:
 
-  
 
 #### Doing it with docker run:
 
