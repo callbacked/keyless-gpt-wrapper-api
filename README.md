@@ -47,7 +47,7 @@ https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8
 # Setting Up Via Docker
 This uses the latest image version in the Docker Hub repository
 
-1.  ``docker run --name keyless -p 1337:1337 callbacked/keyless:latest``
+1.  ``docker run -d --name keyless -p 1337:1337 callbacked/keyless:latest``
 
 # Setting Up Via Docker (Building your image locally)
 
