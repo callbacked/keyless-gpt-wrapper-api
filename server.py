@@ -1,4 +1,3 @@
-#server.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
@@ -226,12 +225,25 @@ async def chat_completion(request: ChatCompletionRequest):
             audio_id = None
             if generate_audio:
                 try:
-                    tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
+                    tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
                     audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
-                    audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
                     audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                    logging.info(f"Starting audio generation for voice: {tiktok_voice}")
+                    logging.info(f"Text to convert: {full_response}")
+                    
+                    # Log the TTS engine state
+                    logging.info(f"TTS Engine state: {tts_engine is not None}")
+                    logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+                    
+                    if audio_bytes:
+                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        logging.info(f"Base64 encoded data length: {len(audio_data)}")
+                    else:
+                        logging.error("No audio bytes received from TTS engine")
+                        
                 except Exception as e:
-                    logging.error(f"Audio generation failed: {str(e)}")
+                    logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
 
             final_response = ChatCompletionStreamResponse(
                 id=conversation_id,
@@ -273,13 +285,25 @@ async def chat_completion(request: ChatCompletionRequest):
         audio_data = None
         audio_id = None
         if generate_audio:
-            try:
-                tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
-                audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
-                audio_data = base64.b64encode(audio_bytes).decode('utf-8')
-                audio_id = f"audio_{uuid.uuid4().hex[:12]}"
-            except Exception as e:
-                logging.error(f"Audio generation failed: {str(e)}")
+                try:
+                    tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
+                    audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
+                    audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                    logging.info(f"Starting audio generation for voice: {tiktok_voice}")
+                    logging.info(f"Text to convert: {full_response}")
+                    
+                    # Log the TTS engine state
+                    logging.info(f"TTS Engine state: {tts_engine is not None}")
+                    logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+                
+                    if audio_bytes:
+                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        logging.info(f"Base64 encoded data length: {len(audio_data)}")
+                    else:
+                        logging.error("No audio bytes received from TTS engine")
+                except Exception as e:
+                    logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
 
         # Calculate token counts
         prompt_tokens = sum(len(msg.content.split()) if msg.content else 0 for msg in conversation_history)
@@ -339,7 +363,7 @@ if __name__ == "__main__":
     if tts_engine:
         logging.info("TikTok TTS functionality enabled")
     else:
-        logging.info("TikTok TTS functionality disabled - set TIKTOK_SESSION_ID environment variable to enable")
+        logging.info("TikTok TTS functionality disabled - set TIKTOK_SESSION_ID environment in your docker-compose or docker run command \n or pass --session-id argument to enable if running locally")
 
     uvicorn.run(app, host="0.0.0.0", port=1337)
 
