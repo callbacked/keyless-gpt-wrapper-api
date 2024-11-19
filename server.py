@@ -67,14 +67,22 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
 
     # If there is a system message, add it before the first user message (DDG AI doesnt let us send system messages, so this is a workaround -- fundamentally, it works the same way when setting a system prompt)
     system_message = next((msg for msg in conversation_history if msg.role == "system"), None)
-    user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
     
-    if system_message and user_messages:
-        user_messages[0]["content"] = f"{system_message.content}\n\n{user_messages[0]['content']}"
+    # turns out i did not add in the partial context fixes from last release
+    messages = []
+    if system_message:
+        messages.append({"role": "user", "content": system_message.content})
+
+    for msg in conversation_history:
+        if msg.role in ["user", "assistant"]:
+            messages.append({
+                "role": "user", 
+                "content": msg.content
+            })
 
     payload = {
-        "messages": user_messages,
-        "model": original_model
+        "model": original_model,
+        "messages": messages
     }
 
     headers = {
