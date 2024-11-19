@@ -1,21 +1,22 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 from fastapi.responses import StreamingResponse
 import logging
 import uuid
 import time
 import json
-import asyncio
-import random
 import httpx
+from datetime import datetime, timedelta
+from models import ChatMessage, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, ChatCompletionResponseUsage, DeltaMessage, ModelInfo, AudioData, AudioConfig, ChatCompletionStreamResponse, ChatCompletionStreamResponseChoice
+from config import MODEL_MAPPING, VOICES
+from tts import TTSRequest, TTSEngine
+import base64
 from fake_useragent import UserAgent
 
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,70 +24,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-MODEL_MAPPING = {
-    "keyless-gpt-4o-mini": "gpt-4o-mini",
-    "keyless-claude-3-haiku": "claude-3-haiku-20240307",
-    "keyless-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "keyless-meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
-}
-
-class ModelInfo(BaseModel):
-    id: str
-    object: str = "model"
-    created: int = int(time.time())
-    owned_by: str = "custom"
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[ChatMessage]
-    temperature: Optional[float] = 1.0
-    top_p: Optional[float] = 1.0
-    n: Optional[int] = 1
-    stream: Optional[bool] = False
-    stop: Optional[Union[str, List[str]]] = None
-    max_tokens: Optional[int] = None
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
-    logit_bias: Optional[Dict[str, float]] = None
-    user: Optional[str] = None
-
-class ChatCompletionResponseChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    finish_reason: Optional[str] = None
-
-class ChatCompletionResponseUsage(BaseModel):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: List[ChatCompletionResponseChoice]
-    usage: ChatCompletionResponseUsage
-
-class DeltaMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
-
-class ChatCompletionStreamResponseChoice(BaseModel):
-    index: int
-    delta: DeltaMessage
-    finish_reason: Optional[str] = None
-
-class ChatCompletionStreamResponse(BaseModel):
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: List[ChatCompletionStreamResponseChoice]
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
@@ -198,19 +135,67 @@ async def list_models():
     models = [ModelInfo(id=model_id) for model_id in MODEL_MAPPING.keys()]
     return {"data": models, "object": "list"}
 
+@app.get("/v1/audio/speech/voices")
+async def list_voices():
+    voices = []
+    for voice_id, info in VOICES.items():
+        voices.append({
+            "voice_id": voice_id,
+            "name": info["name"],
+            "language": info["language"],
+            "category": info["category"]
+        })
+    return {"voices": voices}
+
+@app.post("/v1/audio/speech")
+async def create_speech(request: TTSRequest):
+    try:
+        if not app.state.session_id:
+            raise ValueError("Server not initialized with session ID")
+            
+        engine = TTSEngine(session_id=app.state.session_id)
+        audio_data = await engine.generate_speech(request.input, request.voice)
+        
+        return StreamingResponse(
+            iter([audio_data]),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Type": "audio/mpeg",
+                "Content-Length": str(len(audio_data))
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     conversation_id = str(uuid.uuid4())
-
     logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
+
+    # Check if audio generation is requested
+    generate_audio = (
+        request.modalities is not None and
+        "audio" in request.modalities and
+        request.audio is not None
+    )
 
     conversation_history = conversations.get(conversation_id, [])
     conversation_history.extend(request.messages)
 
     async def generate():
         try:
-            async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
+            full_response = ""
+            async for chunk in chat_with_duckduckgo(
+                " ".join([msg.content for msg in request.messages if msg.content]), 
+                request.model,
+                conversation_history
+            ):
+                full_response += chunk
                 response = ChatCompletionStreamResponse(
                     id=conversation_id,
                     created=int(time.time()),
@@ -225,6 +210,19 @@ async def chat_completion(request: ChatCompletionRequest):
                 )
                 yield f"data: {response.model_dump_json()}\n\n"
 
+            # Generate audio if requested (for streaming responses)
+            audio_data = None
+            audio_id = None
+            if generate_audio and app.state.session_id:
+                try:
+                    engine = TTSEngine(session_id=app.state.session_id)
+                    tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
+                    audio_bytes = await engine.generate_speech(full_response, tiktok_voice)
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                    audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                except Exception as e:
+                    logging.error(f"Audio generation failed: {str(e)}")
+
             final_response = ChatCompletionStreamResponse(
                 id=conversation_id,
                 created=int(time.time()),
@@ -232,7 +230,14 @@ async def chat_completion(request: ChatCompletionRequest):
                 choices=[
                     ChatCompletionStreamResponseChoice(
                         index=0,
-                        delta=DeltaMessage(),
+                        delta=DeltaMessage(
+                            audio=AudioData(
+                                id=audio_id,
+                                expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
+                                data=audio_data,
+                                transcript=full_response
+                            ) if generate_audio else None
+                        ),
                         finish_reason="stop"
                     )
                 ]
@@ -247,8 +252,30 @@ async def chat_completion(request: ChatCompletionRequest):
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
         full_response = ""
-        async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
+        async for chunk in chat_with_duckduckgo(
+            " ".join([msg.content for msg in request.messages if msg.content]), 
+            request.model,
+            conversation_history
+        ):
             full_response += chunk
+
+        # Generate audio if requested (for non-streaming responses)
+        audio_data = None
+        audio_id = None
+        if generate_audio and app.state.session_id:
+            try:
+                engine = TTSEngine(session_id=app.state.session_id)
+                tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
+                audio_bytes = await engine.generate_speech(full_response, tiktok_voice)
+                audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+            except Exception as e:
+                logging.error(f"Audio generation failed: {str(e)}")
+
+        # Calculate token counts
+        prompt_tokens = sum(len(msg.content.split()) if msg.content else 0 for msg in conversation_history)
+        completion_tokens = len(full_response.split())
+        total_tokens = prompt_tokens + completion_tokens
 
         response = ChatCompletionResponse(
             id=conversation_id,
@@ -257,15 +284,24 @@ async def chat_completion(request: ChatCompletionRequest):
             choices=[
                 ChatCompletionResponseChoice(
                     index=0,
-                    message=ChatMessage(role="assistant", content=full_response),
+                    message=ChatMessage(
+                        role="assistant",
+                        content=full_response if not generate_audio else None,
+                        audio=AudioData(
+                            id=audio_id,
+                            expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
+                            data=audio_data,
+                            transcript=full_response
+                        ) if generate_audio else None
+                    ),
                     finish_reason="stop"
                 )
             ],
-            usage=ChatCompletionResponseUsage(
-                prompt_tokens=sum(len(msg.content.split()) for msg in conversation_history),
-                completion_tokens=len(full_response.split()),
-                total_tokens=sum(len(msg.content.split()) for msg in conversation_history) + len(full_response.split())
-            )
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            }
         )
 
         conversation_history.append(ChatMessage(role="assistant", content=full_response))
@@ -283,6 +319,21 @@ async def end_conversation(conversation_id: str):
         logging.warning(f"Attempt to end non-existent conversation {conversation_id}")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+def create_app(session_id: Optional[str] = None):
+    if session_id:
+        app.state.session_id = session_id
+    return app
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=1337)
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Combined Chat and TTS API Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=1337, help="Port to bind to")
+    parser.add_argument("--session-id", required=True, help="TikTok session ID")
+    
+    args = parser.parse_args()
+    
+    app = create_app(session_id=args.session_id)
+    uvicorn.run(app, host=args.host, port=args.port)
