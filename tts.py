@@ -1,13 +1,9 @@
 import httpx
 import base64
 import logging
-import os
 from typing import Optional
 from models import BaseModel
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
 
 class TTSRequest(BaseModel):
     model: str = "tts-1"
@@ -20,14 +16,19 @@ class TTSEngine:
     _instance: Optional['TTSEngine'] = None
     
     @classmethod
-    def initialize(cls, session_id: Optional[str] = None):
-        """Initialize the TTSEngine with a session ID from parameter, environment variable, or .env file"""
+    def initialize(cls, session_id: Optional[str] = None) -> Optional['TTSEngine']:
         if cls._instance is None:
-            # Priority: passed session_id > environment variable
-            session_id = session_id or os.getenv('TIKTOK_SESSION_ID')
             if not session_id:
-                logging.warning("No TikTok session ID found in environment variables or .env file. TTS functionality will be disabled.")
-            cls._instance = cls(session_id) if session_id else None
+                logging.warning("No TikTok session ID provided. TTS functionality will be disabled.")
+                return None
+            
+            try:
+                cls._instance = cls(session_id)
+                logging.info("TTS Engine initialized successfully")
+            except ValueError as e:
+                logging.error(f"Failed to initialize TTS Engine: {str(e)}")
+                return None
+                
         return cls._instance
     
     @classmethod
