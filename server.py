@@ -1,3 +1,4 @@
+#server.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
@@ -12,8 +13,16 @@ from models import ChatMessage, ChatCompletionRequest, ChatCompletionResponse, C
 from config import MODEL_MAPPING, VOICES
 from tts import TTSRequest, TTSEngine
 import base64
+import os 
+import argparse
 from fake_useragent import UserAgent
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Start the chat API server')
+    parser.add_argument('--session-id', 
+                       help='TikTok session ID for TTS functionality (overrides TIKTOK_SESSION_ID env variable)',
+                       default=None)
+    return parser.parse_args()
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -150,12 +159,12 @@ async def list_voices():
 @app.post("/v1/audio/speech")
 async def create_speech(request: TTSRequest):
     try:
-        if not app.state.session_id:
-            raise ValueError("Server not initialized with session ID")
-            
-        engine = TTSEngine(session_id=app.state.session_id)
-        audio_data = await engine.generate_speech(request.input, request.voice)
-        
+        tts_engine = TTSEngine.get_instance()
+        if not tts_engine:
+            raise ValueError("TTS functionality is not available. Check TIKTOK_SESSION_ID configuration.")
+
+        audio_data = await tts_engine.generate_speech(request.input, request.voice)
+
         return StreamingResponse(
             iter([audio_data]),
             media_type="audio/mpeg",
@@ -177,11 +186,13 @@ async def chat_completion(request: ChatCompletionRequest):
     logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
 
-    # Check if audio generation is requested
+    # Check if audio generation is requested and available
+    tts_engine = TTSEngine.get_instance()
     generate_audio = (
         request.modalities is not None and
         "audio" in request.modalities and
-        request.audio is not None
+        request.audio is not None and
+        tts_engine is not None
     )
 
     conversation_history = conversations.get(conversation_id, [])
@@ -191,7 +202,7 @@ async def chat_completion(request: ChatCompletionRequest):
         try:
             full_response = ""
             async for chunk in chat_with_duckduckgo(
-                " ".join([msg.content for msg in request.messages if msg.content]), 
+                " ".join([msg.content for msg in request.messages if msg.content]),
                 request.model,
                 conversation_history
             ):
@@ -213,11 +224,10 @@ async def chat_completion(request: ChatCompletionRequest):
             # Generate audio if requested (for streaming responses)
             audio_data = None
             audio_id = None
-            if generate_audio and app.state.session_id:
+            if generate_audio:
                 try:
-                    engine = TTSEngine(session_id=app.state.session_id)
                     tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
-                    audio_bytes = await engine.generate_speech(full_response, tiktok_voice)
+                    audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
                     audio_data = base64.b64encode(audio_bytes).decode('utf-8')
                     audio_id = f"audio_{uuid.uuid4().hex[:12]}"
                 except Exception as e:
@@ -262,11 +272,10 @@ async def chat_completion(request: ChatCompletionRequest):
         # Generate audio if requested (for non-streaming responses)
         audio_data = None
         audio_id = None
-        if generate_audio and app.state.session_id:
+        if generate_audio:
             try:
-                engine = TTSEngine(session_id=app.state.session_id)
                 tiktok_voice = VOICES.get(request.audio.voice, "en_us_002")
-                audio_bytes = await engine.generate_speech(full_response, tiktok_voice)
+                audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
                 audio_data = base64.b64encode(audio_bytes).decode('utf-8')
                 audio_id = f"audio_{uuid.uuid4().hex[:12]}"
             except Exception as e:
@@ -319,21 +328,18 @@ async def end_conversation(conversation_id: str):
         logging.warning(f"Attempt to end non-existent conversation {conversation_id}")
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-def create_app(session_id: Optional[str] = None):
-    if session_id:
-        app.state.session_id = session_id
-    return app
-
 if __name__ == "__main__":
     import uvicorn
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Combined Chat and TTS API Server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=1337, help="Port to bind to")
-    parser.add_argument("--session-id", required=True, help="TikTok session ID")
-    
-    args = parser.parse_args()
-    
-    app = create_app(session_id=args.session_id)
-    uvicorn.run(app, host=args.host, port=args.port)
+
+    # Initialize TTS Engine according to arguments if passed or not
+    args = parse_arguments()
+    session_id = args.session_id or os.getenv('TIKTOK_SESSION_ID') # local users pass args directly, docker folks use env vars
+    tts_engine = TTSEngine.initialize(session_id=session_id)
+
+    if tts_engine:
+        logging.info("TikTok TTS functionality enabled")
+    else:
+        logging.info("TikTok TTS functionality disabled - set TIKTOK_SESSION_ID environment variable to enable")
+
+    uvicorn.run(app, host="0.0.0.0", port=1337)
+

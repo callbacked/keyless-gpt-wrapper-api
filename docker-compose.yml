@@ -7,4 +7,6 @@ services:
     container_name: keyless
     ports:
       - "1337:1337"
+    environment:
+    #  - TIKTOK_SESSION_ID=  # Optional TTS endpoint functionality
     restart: unless-stopped

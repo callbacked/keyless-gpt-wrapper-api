@@ -1,6 +1,7 @@
 import httpx
 import base64
 import logging
+from typing import Optional
 from models import BaseModel
 
 
@@ -12,7 +13,32 @@ class TTSRequest(BaseModel):
     speed: float = 1.0
 
 class TTSEngine:
+    _instance: Optional['TTSEngine'] = None
+    
+    @classmethod
+    def initialize(cls, session_id: Optional[str] = None) -> Optional['TTSEngine']:
+        if cls._instance is None:
+            if not session_id:
+                logging.warning("No TikTok session ID provided. TTS functionality will be disabled.")
+                return None
+            
+            try:
+                cls._instance = cls(session_id)
+                logging.info("TTS Engine initialized successfully")
+            except ValueError as e:
+                logging.error(f"Failed to initialize TTS Engine: {str(e)}")
+                return None
+                
+        return cls._instance
+    
+    @classmethod
+    def get_instance(cls) -> Optional['TTSEngine']:
+        """Get the singleton instance of TTSEngine"""
+        return cls._instance
+
     def __init__(self, session_id: str):
+        if not session_id:
+            raise ValueError("Session ID is required")
         self.session_id = session_id
         self.headers = {
             'User-Agent': "com.zhiliaoapp.musically/2022600030 (Linux; U; Android 7.1.2; es_ES; SM-G988N; Build/NRD90M;tt-ok/3.12.13.1)",
@@ -22,7 +48,7 @@ class TTSEngine:
     async def generate_speech(self, text: str, voice: str = "en_us_002") -> bytes:
         try:
             sanitized_text = TextProcessor.sanitize_text(text)
-            url = f"https://api16-normal-useast5.us.tiktokv.com/media/api/text/speech/invoke/?text_speaker={voice}&req_text={sanitized_text}&speaker_map_type=0&aid=1233"
+            url = f"https://api22-normal-c-useast1a.tiktokv.com/media/api/text/speech/invoke/?text_speaker={voice}&req_text={sanitized_text}&speaker_map_type=0&aid=1233"
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, headers=self.headers)
@@ -52,7 +78,7 @@ class TextProcessor:
             "ö": "oe",
             "ü": "ue",
             "ß": "ss",
-            "\n": ""
+            "\n": " "
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
