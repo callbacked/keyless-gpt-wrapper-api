@@ -5,15 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Keyless GPT Wrapper API</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link rel="stylesheet" href="styles.css">
-    <style>
-        #threejs-canvas {
-            width: 100%;
-            height: 400px;
-            background-color: #000;
-        }
-    </style>
+    <link rel="stylesheet" href="styles.css"> 
 </head>
 <body>
     <header>
@@ -26,7 +18,6 @@
     </header>
 
     <main>
-        <div id="threejs-canvas"></div>
         <section class="hero">
             <h1>Keyless GPT Wrapper API</h1>
             <p>Connect with DuckDuckGo's AI chat and make API requests to <span id="modelName">LLaMA</span> effortlessly, without cost.</p>
@@ -44,7 +35,6 @@
                     </div>
                     <div id="localSetup">
                         <div class="command-block">
-                            <!-- This command is also listed in the Docker Local Setup section -->
                             <pre><code>git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api</code></pre>
                             <button class="copy-button">📋</button>
                         </div>
@@ -59,7 +49,7 @@
                     </div>
                     <div id="dockerSetup" style="display: none;">
                         <div class="command-block">
-                            <pre><code>docker run --name keyless -p 1337:1337 callbacked/keyless:latest</code></pre>
+                            <pre><code>docker run -d --name keyless -p 1337:1337 callbacked/keyless:latest</code></pre>
                             <button class="copy-button">📋</button>
                         </div>
                     </div>
@@ -171,27 +161,6 @@
     <footer>
         <p>Made by callbacked :)</p>
     </footer>
-    <script src="scripts.js"></script>
-    <script>
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight / 2);
-        document.getElementById('threejs-canvas').appendChild(renderer.domElement);
-
-        const geometry = new THREE.BoxGeometry();
-        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        const cube = new THREE.Mesh(geometry, material);
-        scene.add(cube);
-
-        camera.position.z = 5;
-
-        function animate() {
-            requestAnimationFrame(animate);
-            cube.rotation.x += 0.01;
-            cube.rotation.y += 0.01;
-            renderer.render(scene, camera);
-        }
-        animate();
+    <script src="scripts.js"></script>        
 </body>
 </html>
