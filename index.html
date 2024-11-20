@@ -13,6 +13,7 @@
             <nav>
                 <a href="#setup">Setup</a>
                 <a href="https://github.com/callbacked/keyless-gpt-wrapper-api" target="_blank">GitHub</a>
+                <a href="https://github.com/callbacked/keyless-gpt-wrapper-api/wiki" target="_blank">Wiki</a>
             </nav>
         </div>
     </header>
@@ -28,6 +29,22 @@
             <div class="container">
                 <h2>Getting Started</h2>
                 <div class="setup-container">
+                    <div class="setup-options">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="ttsToggle">
+                            <span class="slider"></span>
+                            <span class="toggle-label">Include TTS Setup</span>
+                        </label>
+                    </div>
+                    <div class="session-id-info" style="display: none;">
+                        <h4>Getting Your TikTok Session ID For Speech Generation Capabilities (Optional API Feature)</h4>
+                        <ol>
+                            <li>Log in to the <a href="https://www.tiktok.com"> TikTok Web App</a></li>
+                            <li>Install the <a href="https://cookie-editor.com">Cookie Editor extension</a> for your browser</li>
+                            <li>Open the extension and search for <code>sessionid</code></li>
+                            <li>Copy the value and paste it in your desired setup in <code>SESSION_ID_HERE</code></li>
+                        </ol>
+                    </div>
                     <div class="tabs">
                         <div class="tab active" id="localTab">Local Setup</div>
                         <div class="tab" id="dockerTab">Docker</div>
@@ -117,13 +134,55 @@
                 <div class="bento-item">
                     <h3>Delete Conversation</h3>
                     <div class="command-block">
-                        <pre><code>curl -X DELETE http://127.0.0.1:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7</code></pre>
+                        <pre><code>curl -X DELETE http://localhost:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7</code></pre>
                         <button class="copy-button">📋</button>
                     </div>
                     <p class="command-description">Delete a specific conversation by its ID</p>
                 </div>
+                <div class="bento-item">
+                    <h3 style="color: #c62ef7;">(Optional) Available TTS Voices</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X GET http://127.0.0.1:1337/v1/audio/speech/voices</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Lists all available TTS voices</p>
+                </div>
+                <div class="bento-item">
+                    <h3 style="color: #c62ef7;">(Optional) Message with Voice Generation</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X POST "http://localhost:1337/v1/chat/completions" \
+-H "Content-Type: application/json" \
+-d '{
+    "model": "keyless-gpt-4o-mini",
+    "messages": [
+        {"role": "user", "content": "Tell me a joke"}
+    ],
+    "modalities": ["audio"],
+    "audio": {
+        "voice": "en_us_002"
+    },
+    "stream": false
+}' | jq -r '.choices[0].message.audio.data' | base64 -d > speech.mp3</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Get an LLM response with generated speech (Only works with <code>stream:false</code>)</p>
+                </div>
+                <div class="bento-item">
+                    <h3 style="color: #c62ef7;">(Optional) Standalone TTS</h3>
+                    <div class="command-block">
+                        <pre><code>curl -X POST "http://localhost:1337/v1/audio/speech" \
+-H "Content-Type: application/json" \
+-d '{
+    "input": "Hello, this is a test message",
+    "voice": "en_us_002"
+}' --output speech.mp3</code></pre>
+                        <button class="copy-button">📋</button>
+                    </div>
+                    <p class="command-description">Generate speech from your own input text</p>
+                </div>
             </div>
         </section>
+
         <section class="integrate-elsewhere">
             <h2>Integrate Elsewhere</h2>
             <p style="color: #bbbbbb; margin-bottom: 40px;">Use the API wrapper in your favorite AI assistant tools and enhance your productivity (Your mileage may vary).</p>
