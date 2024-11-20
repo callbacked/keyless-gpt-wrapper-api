@@ -1,4 +1,4 @@
-
+  
 # [Keyless GPT Wrapper API](https://callbacked.github.io/keyless-gpt-wrapper-api/)
 
 I wanted to use GPT-4o-mini like I would normally do on the website (for free), but just doing it through API calls.
@@ -35,9 +35,9 @@ https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8
 
 # Setting Up
 
-If you want to use this API with speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(With-TTS-Endpoint))
+If you want to use this API WITH speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(With-TTS-Endpoint))
 
-If you want to use this API as-is without speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(Without-TTS-Endpoint))
+If you want to use this API as-is WITHOUT speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(Without-TTS-Endpoint))
 
 
 ## Sending requests
