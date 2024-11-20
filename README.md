@@ -33,50 +33,12 @@ https://github.com/user-attachments/assets/02dc5970-1b2b-4ce8-8aab-e3b589c276e8
 
 
 
-# Setting Up Locally
+# Setting Up
 
+If you want to use this API with speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(With-TTS-Endpoint))
 
-1.  ``pip install -r requirements.txt``
+If you want to use this API as-is without speech generation functionality, [follow this setup guide](https://github.com/callbacked/keyless-gpt-wrapper-api/wiki/Setting-Up-(Without-TTS-Endpoint))
 
-
-2.  ``python server.py``  **(should now be running on localhost:1337)**
-
-
-3. Perform a test call by running ``python testcalls.py``  **in a separate terminal**
-
-# Setting Up Via Docker
-This uses the latest image version in the Docker Hub repository
-
-1.  ``docker run -d --name keyless -p 1337:1337 callbacked/keyless:latest``
-
-# Setting Up Via Docker (Building your image locally)
-
-If you don't want to use the Docker Hub image and want to do it yourself, you can do it one of two ways, its up to personal preference:
-
-
-#### Doing it with docker run:
-
-
-
-1.  ``git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api ``
-
-
-
-2.  ``docker build -t keyless-gpt-wrapper-api:latest .``
-
-
-
-3.  ``docker run --name keyless -d -p 1337:1337 keyless-gpt-wrapper-api:latest``
-
-
-
-#### Doing it with docker-compose:
-
-
-1.  ``git clone https://github.com/callbacked/keyless-gpt-wrapper-api && cd keyless-gpt-wrapper-api ``
-
-  
-4.  ``docker-compose up -d``
 
 ## Sending requests
 
