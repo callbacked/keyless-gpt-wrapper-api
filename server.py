@@ -1,21 +1,30 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional
 from fastapi.responses import StreamingResponse
 import logging
 import uuid
 import time
 import json
-import asyncio
-import random
 import httpx
+from datetime import datetime, timedelta
+from models import ChatMessage, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, ChatCompletionResponseUsage, DeltaMessage, ModelInfo, AudioData, AudioConfig, ChatCompletionStreamResponse, ChatCompletionStreamResponseChoice
+from config import MODEL_MAPPING, VOICES
+from tts import TTSRequest, TTSEngine
+import base64
+import os 
+import argparse
 from fake_useragent import UserAgent
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Start the chat API server')
+    parser.add_argument('--session-id', 
+                       help='TikTok session ID for TTS functionality (overrides TIKTOK_SESSION_ID env variable)',
+                       default=None)
+    return parser.parse_args()
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,70 +32,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-MODEL_MAPPING = {
-    "keyless-gpt-4o-mini": "gpt-4o-mini",
-    "keyless-claude-3-haiku": "claude-3-haiku-20240307",
-    "keyless-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    "keyless-meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
-}
-
-class ModelInfo(BaseModel):
-    id: str
-    object: str = "model"
-    created: int = int(time.time())
-    owned_by: str = "custom"
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: List[ChatMessage]
-    temperature: Optional[float] = 1.0
-    top_p: Optional[float] = 1.0
-    n: Optional[int] = 1
-    stream: Optional[bool] = False
-    stop: Optional[Union[str, List[str]]] = None
-    max_tokens: Optional[int] = None
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
-    logit_bias: Optional[Dict[str, float]] = None
-    user: Optional[str] = None
-
-class ChatCompletionResponseChoice(BaseModel):
-    index: int
-    message: ChatMessage
-    finish_reason: Optional[str] = None
-
-class ChatCompletionResponseUsage(BaseModel):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-class ChatCompletionResponse(BaseModel):
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: List[ChatCompletionResponseChoice]
-    usage: ChatCompletionResponseUsage
-
-class DeltaMessage(BaseModel):
-    role: Optional[str] = None
-    content: Optional[str] = None
-
-class ChatCompletionStreamResponseChoice(BaseModel):
-    index: int
-    delta: DeltaMessage
-    finish_reason: Optional[str] = None
-
-class ChatCompletionStreamResponse(BaseModel):
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: List[ChatCompletionStreamResponseChoice]
 
 # Store active conversations
 conversations: Dict[str, List[ChatMessage]] = {}
@@ -122,14 +67,22 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
 
     # If there is a system message, add it before the first user message (DDG AI doesnt let us send system messages, so this is a workaround -- fundamentally, it works the same way when setting a system prompt)
     system_message = next((msg for msg in conversation_history if msg.role == "system"), None)
-    user_messages = [{"role": msg.role, "content": msg.content} for msg in conversation_history if msg.role == "user"]
     
-    if system_message and user_messages:
-        user_messages[0]["content"] = f"{system_message.content}\n\n{user_messages[0]['content']}"
+    # turns out i did not add in the partial context fixes from last release
+    messages = []
+    if system_message:
+        messages.append({"role": "user", "content": system_message.content})
+
+    for msg in conversation_history:
+        if msg.role in ["user", "assistant"]:
+            messages.append({
+                "role": "user", 
+                "content": msg.content
+            })
 
     payload = {
-        "messages": user_messages,
-        "model": original_model
+        "model": original_model,
+        "messages": messages
     }
 
     headers = {
@@ -198,19 +151,69 @@ async def list_models():
     models = [ModelInfo(id=model_id) for model_id in MODEL_MAPPING.keys()]
     return {"data": models, "object": "list"}
 
+@app.get("/v1/audio/speech/voices")
+async def list_voices():
+    voices = []
+    for voice_id, info in VOICES.items():
+        voices.append({
+            "voice_id": voice_id,
+            "name": info["name"],
+            "language": info["language"],
+            "category": info["category"]
+        })
+    return {"voices": voices}
+
+@app.post("/v1/audio/speech")
+async def create_speech(request: TTSRequest):
+    try:
+        tts_engine = TTSEngine.get_instance()
+        if not tts_engine:
+            raise ValueError("TTS functionality is not available. Check TIKTOK_SESSION_ID configuration.")
+
+        audio_data = await tts_engine.generate_speech(request.input, request.voice)
+
+        return StreamingResponse(
+            iter([audio_data]),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Type": "audio/mpeg",
+                "Content-Length": str(len(audio_data))
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logging.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
     conversation_id = str(uuid.uuid4())
-
     logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
+
+    # Check if audio generation is requested and available
+    tts_engine = TTSEngine.get_instance()
+    generate_audio = (
+        request.modalities is not None and
+        "audio" in request.modalities and
+        request.audio is not None and
+        tts_engine is not None
+    )
 
     conversation_history = conversations.get(conversation_id, [])
     conversation_history.extend(request.messages)
 
     async def generate():
         try:
-            async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
+            full_response = ""
+            async for chunk in chat_with_duckduckgo(
+                " ".join([msg.content for msg in request.messages if msg.content]),
+                request.model,
+                conversation_history
+            ):
+                full_response += chunk
                 response = ChatCompletionStreamResponse(
                     id=conversation_id,
                     created=int(time.time()),
@@ -225,6 +228,31 @@ async def chat_completion(request: ChatCompletionRequest):
                 )
                 yield f"data: {response.model_dump_json()}\n\n"
 
+            # Generate audio if requested (for streaming responses)
+            audio_data = None
+            audio_id = None
+            if generate_audio:
+                try:
+                    tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
+                    audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
+                    audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                    logging.info(f"Starting audio generation for voice: {tiktok_voice}")
+                    logging.info(f"Text to convert: {full_response}")
+                    
+                    # Log the TTS engine state
+                    logging.info(f"TTS Engine state: {tts_engine is not None}")
+                    logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+                    
+                    if audio_bytes:
+                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        logging.info(f"Base64 encoded data length: {len(audio_data)}")
+                    else:
+                        logging.error("No audio bytes received from TTS engine")
+                        
+                except Exception as e:
+                    logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
+
             final_response = ChatCompletionStreamResponse(
                 id=conversation_id,
                 created=int(time.time()),
@@ -232,7 +260,14 @@ async def chat_completion(request: ChatCompletionRequest):
                 choices=[
                     ChatCompletionStreamResponseChoice(
                         index=0,
-                        delta=DeltaMessage(),
+                        delta=DeltaMessage(
+                            audio=AudioData(
+                                id=audio_id,
+                                expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
+                                data=audio_data,
+                                transcript=full_response
+                            ) if generate_audio else None
+                        ),
                         finish_reason="stop"
                     )
                 ]
@@ -247,8 +282,41 @@ async def chat_completion(request: ChatCompletionRequest):
         return StreamingResponse(generate(), media_type="text/event-stream")
     else:
         full_response = ""
-        async for chunk in chat_with_duckduckgo(" ".join([msg.content for msg in request.messages]), request.model, conversation_history):
+        async for chunk in chat_with_duckduckgo(
+            " ".join([msg.content for msg in request.messages if msg.content]), 
+            request.model,
+            conversation_history
+        ):
             full_response += chunk
+
+        # Generate audio if requested (for non-streaming responses)
+        audio_data = None
+        audio_id = None
+        if generate_audio:
+                try:
+                    tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
+                    audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
+                    audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                    logging.info(f"Starting audio generation for voice: {tiktok_voice}")
+                    logging.info(f"Text to convert: {full_response}")
+                    
+                    # Log the TTS engine state
+                    logging.info(f"TTS Engine state: {tts_engine is not None}")
+                    logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+                
+                    if audio_bytes:
+                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                        logging.info(f"Base64 encoded data length: {len(audio_data)}")
+                    else:
+                        logging.error("No audio bytes received from TTS engine")
+                except Exception as e:
+                    logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
+
+        # Calculate token counts
+        prompt_tokens = sum(len(msg.content.split()) if msg.content else 0 for msg in conversation_history)
+        completion_tokens = len(full_response.split())
+        total_tokens = prompt_tokens + completion_tokens
 
         response = ChatCompletionResponse(
             id=conversation_id,
@@ -257,15 +325,24 @@ async def chat_completion(request: ChatCompletionRequest):
             choices=[
                 ChatCompletionResponseChoice(
                     index=0,
-                    message=ChatMessage(role="assistant", content=full_response),
+                    message=ChatMessage(
+                        role="assistant",
+                        content=full_response if not generate_audio else None,
+                        audio=AudioData(
+                            id=audio_id,
+                            expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
+                            data=audio_data,
+                            transcript=full_response
+                        ) if generate_audio else None
+                    ),
                     finish_reason="stop"
                 )
             ],
-            usage=ChatCompletionResponseUsage(
-                prompt_tokens=sum(len(msg.content.split()) for msg in conversation_history),
-                completion_tokens=len(full_response.split()),
-                total_tokens=sum(len(msg.content.split()) for msg in conversation_history) + len(full_response.split())
-            )
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            }
         )
 
         conversation_history.append(ChatMessage(role="assistant", content=full_response))
@@ -285,4 +362,16 @@ async def end_conversation(conversation_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Initialize TTS Engine according to arguments if passed or not
+    args = parse_arguments()
+    session_id = args.session_id or os.getenv('TIKTOK_SESSION_ID') # local users pass args directly, docker folks use env vars
+    tts_engine = TTSEngine.initialize(session_id=session_id)
+
+    if tts_engine:
+        logging.info("TikTok TTS functionality enabled")
+    else:
+        logging.info("TikTok TTS functionality disabled - set TIKTOK_SESSION_ID environment in your docker-compose or docker run command \n or pass --session-id argument to enable if running locally")
+
     uvicorn.run(app, host="0.0.0.0", port=1337)
+

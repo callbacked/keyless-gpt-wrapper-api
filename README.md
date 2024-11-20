@@ -112,7 +112,7 @@ curl -X POST "http://localhost:1337/v1/chat/completions" \
 In cases where you want to continue having a conversion you can keep note of the conversation_id generated, for instance:
 
   
-You send your initial message (using curl as an example): **use ``stream:false`` for readibility**
+You send your initial message (**use ``stream:false`` for readibility**):
 
  ```
 curl -X POST "http://localhost:1337/v1/chat/completions" \
@@ -165,10 +165,51 @@ curl -X POST "http://localhost:1337/v1/chat/completions" \
   "stream": false
 }'
 ```
-
 #### Deleting a conversation
 
 ``curl -X DELETE http://127.0.0.1:1337/v1/conversations/1cecdf45-df73-431b-884b-6d233b5511c7``
+
+## (Optional) Text to Speech Endpoint
+Assuming you are using the optional TTS endpoint, which uses TikTok's TTS and requires a session_id during setup, you can use this endpoint in a similar fashion to OpenAI's Speech API. This is useful for cases when you are hosting your own LLM Web UI (like Open Web UI) and want to use TTS to read its messages to you, or you want to develop or prototype an AI assistant.
+
+#### Get list of available voices
+``curl -X GET http://127.0.0.1:1337/v1/audio/speech/voices``
+
+#### Sending a message with voice generation 
+If you want to interact with an LLM and obtain a response with generated speech you can do the following:
+
+```
+curl -X POST "http://localhost:1337/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "keyless-gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Tell me a joke"}
+    ],
+    "modalities": ["audio"],
+    "audio": {
+      "voice": "en_us_002"
+    },
+    "stream": false
+  }' | jq -r '.choices[0].message.audio.data' | base64 -d > speech.mp3
+```
+* **Only can be done with ``stream:false``**
+* A complete list of voices can be found here(placeholder)
+* ``| jq -r '.choices[0].message.audio.data' | base64 -d > speech.mp3`` (decodes the audio data from the completed response to provide an mp3 file)
+
+#### Using TTS Standalone
+It is not required to use an LLM to get TTS, you can also generate speech from your own text input.
+
+```
+curl -X POST "http://localhost:1337/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "Hello, this is a test message",
+    "voice": "en_us_002"
+  }' \
+  --output speech.mp3
+```
+
 
 
 
