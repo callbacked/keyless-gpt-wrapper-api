@@ -189,7 +189,8 @@ async def create_speech(request: TTSRequest):
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
-    conversation_id = str(uuid.uuid4())
+    # Use provided conversation_id or generate new one
+    conversation_id = request.id if request.id else str(uuid.uuid4())
     logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
 
@@ -202,8 +203,12 @@ async def chat_completion(request: ChatCompletionRequest):
         tts_engine is not None
     )
 
+    # Get existing conversation history or initialize new one
     conversation_history = conversations.get(conversation_id, [])
+    
+    # Add new messages to history
     conversation_history.extend(request.messages)
+    conversations[conversation_id] = conversation_history
 
     async def generate():
         try:
@@ -293,30 +298,45 @@ async def chat_completion(request: ChatCompletionRequest):
         audio_data = None
         audio_id = None
         if generate_audio:
-                try:
-                    tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
-                    audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
-                    audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
-                    audio_id = f"audio_{uuid.uuid4().hex[:12]}"
-                    logging.info(f"Starting audio generation for voice: {tiktok_voice}")
-                    logging.info(f"Text to convert: {full_response}")
-                    
-                    # Log the TTS engine state
-                    logging.info(f"TTS Engine state: {tts_engine is not None}")
-                    logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+            try:
+                tiktok_voice = request.audio.voice if isinstance(request.audio.voice, str) else "en_us_002"
+                audio_bytes = await tts_engine.generate_speech(full_response, tiktok_voice)
+                audio_data = base64.b64encode(audio_bytes).decode('utf-8') if audio_bytes else ""
+                audio_id = f"audio_{uuid.uuid4().hex[:12]}"
+                logging.info(f"Starting audio generation for voice: {tiktok_voice}")
+                logging.info(f"Text to convert: {full_response}")
                 
-                    if audio_bytes:
-                        audio_data = base64.b64encode(audio_bytes).decode('utf-8')
-                        logging.info(f"Base64 encoded data length: {len(audio_data)}")
-                    else:
-                        logging.error("No audio bytes received from TTS engine")
-                except Exception as e:
-                    logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
+                # Log the TTS engine state
+                logging.info(f"TTS Engine state: {tts_engine is not None}")
+                logging.info(f"Audio bytes received: {len(audio_bytes) if audio_bytes else 'None'}")
+            
+                if audio_bytes:
+                    audio_data = base64.b64encode(audio_bytes).decode('utf-8')
+                    logging.info(f"Base64 encoded data length: {len(audio_data)}")
+                else:
+                    logging.error("No audio bytes received from TTS engine")
+            except Exception as e:
+                logging.error(f"Audio generation failed: {str(e)}", exc_info=True)
 
         # Calculate token counts
         prompt_tokens = sum(len(msg.content.split()) if msg.content else 0 for msg in conversation_history)
         completion_tokens = len(full_response.split())
         total_tokens = prompt_tokens + completion_tokens
+
+        # Create and store assistant's response
+        assistant_message = ChatMessage(
+            role="assistant",
+            content=full_response if not generate_audio else None,
+            audio=AudioData(
+                id=audio_id,
+                expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
+                data=audio_data,
+                transcript=full_response
+            ) if generate_audio else None
+        )
+        
+        conversation_history.append(assistant_message)
+        conversations[conversation_id] = conversation_history
 
         response = ChatCompletionResponse(
             id=conversation_id,
@@ -325,16 +345,7 @@ async def chat_completion(request: ChatCompletionRequest):
             choices=[
                 ChatCompletionResponseChoice(
                     index=0,
-                    message=ChatMessage(
-                        role="assistant",
-                        content=full_response if not generate_audio else None,
-                        audio=AudioData(
-                            id=audio_id,
-                            expires_at=int((datetime.now() + timedelta(hours=1)).timestamp()),
-                            data=audio_data,
-                            transcript=full_response
-                        ) if generate_audio else None
-                    ),
+                    message=assistant_message,
                     finish_reason="stop"
                 )
             ],
@@ -344,9 +355,6 @@ async def chat_completion(request: ChatCompletionRequest):
                 "total_tokens": total_tokens
             }
         )
-
-        conversation_history.append(ChatMessage(role="assistant", content=full_response))
-        conversations[conversation_id] = conversation_history
         
         return response
 
