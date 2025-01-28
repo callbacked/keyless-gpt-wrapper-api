@@ -189,8 +189,8 @@ async def create_speech(request: TTSRequest):
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
-    # Use provided conversation_id or generate new one
-    conversation_id = request.id if request.id else str(uuid.uuid4())
+    # Use provided conversation_id, id, or generate new one
+    conversation_id = request.conversation_id or str(uuid.uuid4())
     logging.info(f"Received chat completion request for conversation {conversation_id}")
     logging.info(f"Request: {request.model_dump()}")
 
@@ -207,7 +207,12 @@ async def chat_completion(request: ChatCompletionRequest):
     conversation_history = conversations.get(conversation_id, [])
     
     # Add new messages to history
-    conversation_history.extend(request.messages)
+    for msg in request.messages:
+        # Only add message if it's not already in the history
+        if not any(existing.content == msg.content and existing.role == msg.role 
+                  for existing in conversation_history):
+            conversation_history.append(msg)
+    
     conversations[conversation_id] = conversation_history
 
     async def generate():
