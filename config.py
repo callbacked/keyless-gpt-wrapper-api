@@ -1,5 +1,6 @@
 MODEL_MAPPING = {
     "keyless-gpt-4o-mini": "gpt-4o-mini",
+    "keyless-gpt-o3-mini": "o3-mini",
     "keyless-claude-3-haiku": "claude-3-haiku-20240307",
     "keyless-mixtral-8x7b": "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "keyless-meta-Llama-3.1-70B-Instruct-Turbo": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"
