@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from typing import List, Dict, Optional
 from fastapi.responses import StreamingResponse
 import logging
@@ -8,13 +10,20 @@ import time
 import json
 import httpx
 from datetime import datetime, timedelta
-from models import ChatMessage, ChatCompletionRequest, ChatCompletionResponse, ChatCompletionResponseChoice, ChatCompletionResponseUsage, DeltaMessage, ModelInfo, AudioData, AudioConfig, ChatCompletionStreamResponse, ChatCompletionStreamResponseChoice
+from models import (
+    ChatMessage, ChatCompletionRequest, ChatCompletionResponse, 
+    ChatCompletionResponseChoice, ChatCompletionResponseUsage, 
+    DeltaMessage, ModelInfo, AudioData, AudioConfig, 
+    ChatCompletionStreamResponse, ChatCompletionStreamResponseChoice,
+    ErrorResponse, APIError
+)
 from config import MODEL_MAPPING, VOICES
 from tts import TTSRequest, TTSEngine
 import base64
 import os 
 import argparse
 from fake_useragent import UserAgent
+from starlette.middleware.base import BaseHTTPMiddleware
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Start the chat API server')
@@ -59,16 +68,21 @@ async def update_vqd_token(user_agent):
             return ""
 
 async def chat_with_duckduckgo(query: str, model: str, conversation_history: List[ChatMessage]):
-    original_model = MODEL_MAPPING.get(model, model)
+    original_model = MODEL_MAPPING.get(model)
+    if not original_model:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model}' not found. Available models: {list(MODEL_MAPPING.keys())}"
+        )
+
     user_agent = get_next_user_agent()
     vqd_token = await update_vqd_token(user_agent)
     if not vqd_token:
         raise HTTPException(status_code=500, detail="Failed to obtain VQD token")
 
-    # If there is a system message, add it before the first user message (DDG AI doesnt let us send system messages, so this is a workaround -- fundamentally, it works the same way when setting a system prompt)
+    # If there is a system message, add it before the first user message
     system_message = next((msg for msg in conversation_history if msg.role == "system"), None)
     
-    # turns out i did not add in the partial context fixes from last release
     messages = []
     if system_message:
         messages.append({"role": "user", "content": system_message.content})
@@ -92,9 +106,8 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
     }
 
     logging.info(f"Sending payload to DuckDuckGo with User-Agent: {user_agent}")
-    # swapped to stream using client.stream() - no more artificial streaming
-    async with httpx.AsyncClient() as client:
-        try:
+    try:
+        async with httpx.AsyncClient() as client:
             async with client.stream('POST', "https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers) as response:
                 if response.status_code == 200:
                     async for line in response.aiter_lines():
@@ -109,47 +122,53 @@ async def chat_with_duckduckgo(query: str, model: str, conversation_history: Lis
                             except json.JSONDecodeError:
                                 logging.warning(f"Failed to parse JSON: {data}")
                 elif response.status_code == 429:
-                    for attempt in range(5): # Try up to 5 times
+                    for attempt in range(5):
                         user_agent = get_next_user_agent()
                         vqd_token = await update_vqd_token(user_agent)
                         headers.update({
                             "User-Agent": user_agent,
                             "x-vqd-4": vqd_token
                         })
-                        async with client.stream('POST', "https://duckduckgo.com/duckchat/v1/chat", json=payload, headers=headers) as retry_response:
-                            if retry_response.status_code == 200:
-                                async for line in retry_response.aiter_lines():
-                                    if line.startswith("data: "):
-                                        data = line[6:].strip()
-                                        if data == "[DONE]":
-                                            break
-                                        try:
-                                            json_data = json.loads(data)
-                                            message = json_data.get("message", "")
-                                            yield message
-                                        except json.JSONDecodeError:
-                                            logging.warning(f"Failed to parse JSON: {data}")
-                                break
+                        retry_response = await client.post(
+                            "https://duckduckgo.com/duckchat/v1/chat",
+                            json=payload,
+                            headers=headers
+                        )
+                        if retry_response.status_code == 200:
+                            yield retry_response.json().get("message", "")
+                            break
                     else:
                         raise HTTPException(status_code=429, detail="Rate limit exceeded. Please try again later.")
                 else:
-                    logging.error(f"Error response from DuckDuckGo. Status code: {response.status_code}")
-                    raise HTTPException(status_code=response.status_code, detail=f"Error communicating with DuckDuckGo: {response.text}")
-        except httpx.HTTPStatusError as e:
-            logging.error(f"HTTP error occurred: {str(e)}")
-            raise HTTPException(status_code=e.response.status_code, detail=str(e))
-        except httpx.RequestError as e:
-            logging.error(f"Request error occurred: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-        except Exception as e:
-            logging.error(f"Unexpected error in chat_with_duckduckgo: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+                    error_text = await response.aread()
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=f"Error communicating with DuckDuckGo: {error_text.decode()}"
+                    )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/v1/models")
 async def list_models():
     logging.info("Listing available models")
-    models = [ModelInfo(id=model_id) for model_id in MODEL_MAPPING.keys()]
-    return {"data": models, "object": "list"}
+    models = []
+    for model_id in MODEL_MAPPING.keys():
+        model_info = ModelInfo(
+            id=model_id,
+            root=model_id,
+            created=int(time.time()),
+            owned_by="organization"
+        )
+        models.append(model_info)
+    
+    return {
+        "data": models,
+        "object": "list"
+    }
 
 @app.get("/v1/audio/speech/voices")
 async def list_voices():
@@ -189,6 +208,13 @@ async def create_speech(request: TTSRequest):
 
 @app.post("/v1/chat/completions")
 async def chat_completion(request: ChatCompletionRequest):
+    # Validate model
+    if request.model not in MODEL_MAPPING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{request.model}' not found. Available models: {list(MODEL_MAPPING.keys())}"
+        )
+
     # Use provided conversation_id, id, or generate new one
     conversation_id = request.conversation_id or str(uuid.uuid4())
     logging.info(f"Received chat completion request for conversation {conversation_id}")
@@ -372,6 +398,72 @@ async def end_conversation(conversation_id: str):
     else:
         logging.warning(f"Attempt to end non-existent conversation {conversation_id}")
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    error = ErrorResponse(
+        message=str(exc.detail),
+        type="invalid_request_error" if exc.status_code == 400 else "server_error",
+        code=str(exc.status_code)
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=APIError(error=error).model_dump(),
+        headers={
+            "x-request-id": str(uuid.uuid4()),
+            "x-ratelimit-limit-requests": "50",
+            "x-ratelimit-remaining-requests": "49",
+            "x-ratelimit-reset-requests": str(int(time.time()) + 3600)
+        }
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    error = ErrorResponse(
+        message="An unexpected error occurred",
+        type="server_error",
+        code="500"
+    )
+    return JSONResponse(
+        status_code=500,
+        content=APIError(error=error).model_dump(),
+        headers={
+            "x-request-id": str(uuid.uuid4()),
+            "x-ratelimit-limit-requests": "50",
+            "x-ratelimit-remaining-requests": "49",
+            "x-ratelimit-reset-requests": str(int(time.time()) + 3600)
+        }
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    error = ErrorResponse(
+        message=str(exc),
+        type="invalid_request_error",
+        code="422",
+        param=exc.errors()[0].get("loc", [])[0] if exc.errors() else None
+    )
+    return JSONResponse(
+        status_code=422,
+        content=APIError(error=error).model_dump(),
+        headers={
+            "x-request-id": str(uuid.uuid4()),
+            "x-ratelimit-limit-requests": "50",
+            "x-ratelimit-remaining-requests": "49",
+            "x-ratelimit-reset-requests": str(int(time.time()) + 3600)
+        }
+    )
+
+class OpenAIHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["x-request-id"] = str(uuid.uuid4())
+        response.headers["x-ratelimit-limit-requests"] = "50"
+        response.headers["x-ratelimit-remaining-requests"] = "49"
+        response.headers["x-ratelimit-reset-requests"] = str(int(time.time()) + 3600)
+        return response
+
+app.add_middleware(OpenAIHeadersMiddleware)
 
 if __name__ == "__main__":
     import uvicorn

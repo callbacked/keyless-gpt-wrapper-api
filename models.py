@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Union
+from pydantic import BaseModel, validator
+from typing import List, Dict, Optional, Union, Any
 import time
 
 class AudioConfig(BaseModel):
@@ -17,12 +17,22 @@ class ModelInfo(BaseModel):
     id: str
     object: str = "model"
     created: int = int(time.time())
-    owned_by: str = "custom"
+    owned_by: str = "organization"
+    root: Optional[str] = None
+    parent: Optional[str] = None
+    permission: List[Dict[str, Any]] = [{"id": "modelperm-default", "object": "model_permission", "created": int(time.time()), "allow_create_engine": False, "allow_sampling": True, "allow_logprobs": True, "allow_search_indices": False, "allow_view": True, "allow_fine_tuning": False, "organization": "*", "group": None, "is_blocking": False}]
 
 class ChatMessage(BaseModel):
     role: str
-    content: Optional[str] = None
+    content: Optional[Union[str, List[Dict[str, str]]]] = None
     audio: Optional[AudioData] = None
+
+    @validator('content')
+    def validate_content(cls, v):
+        if isinstance(v, list):
+            # Extract text from structured content
+            return ' '.join(item.get('text', '') for item in v if isinstance(item, dict) and 'text' in item)
+        return v
 
 class ChatCompletionRequest(BaseModel):
     model: str
@@ -74,4 +84,13 @@ class ChatCompletionStreamResponse(BaseModel):
     created: int
     model: str
     choices: List[ChatCompletionStreamResponseChoice]
+
+class ErrorResponse(BaseModel):
+    message: str
+    type: str
+    param: Optional[str] = None
+    code: Optional[str] = None
+
+class APIError(BaseModel):
+    error: ErrorResponse
 
